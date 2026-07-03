@@ -2,7 +2,7 @@
 
 🧑‍🚀 A self-hosted, security-first identity provider for every Neko\* project — one OIDC / OAuth 2.1 server instead of twenty copy-pasted Discord OAuth apps.
 
-> **Status: early development.** The OIDC/OAuth 2.1 core is real and tested — authorization code flow, mandatory PKCE, refresh token rotation, client credentials, per-client RBAC — "Sign in with Discord/Roblox/Twitch/VPZone" works end to end, and a self-service account portal (`/account`) lets a user view/link/unlink identities (including VRChat's bio/friend-request bot verification) and delete their own account, which cascades a signed webhook to every app that knows them. Transactional email is also real: an SMTP sender, a 9-template library seeded from real drafts, and a rate-limited/logged send path, all admin-API-driven (no console UI yet). A client SDK (`packages/sdk`, `@nekosunevr/oauth2-sdk`) now exists too, and has already been used to migrate a real separate Neko\* project off its own direct Discord OAuth setup — see [packages/sdk/README.md](packages/sdk/README.md). The admin console itself and the broader connector backlog (Google, GitHub, etc.) are still ahead. This README describes the target design; see [TODO.md](TODO.md) for what's actually done versus still to build.
+> **Status: early development.** The OIDC/OAuth 2.1 core is real and tested — authorization code flow, mandatory PKCE, refresh token rotation, client credentials, per-client RBAC — "Sign in with Discord/Roblox/Twitch/VPZone" works end to end, and a self-service account portal (`/account`) lets a user view/link/unlink identities (including VRChat's bio/friend-request bot verification) and delete their own account, which cascades a signed webhook to every app that knows them. Transactional email is also real: an SMTP sender, a 9-template library seeded from real drafts, and a rate-limited/logged send path. A client SDK (`packages/sdk`, `@nekosunevr/oauth2-sdk`) has already been used to migrate a real separate Neko\* project off its own direct Discord OAuth setup — see [packages/sdk/README.md](packages/sdk/README.md). The admin console (`apps/console`) now exists too, dogfooding the server it administers for its own admin login, with real client management (register/edit/rotate secret) — see [apps/console/README.md](apps/console/README.md). Managing users/roles/connectors, the connector picker, email/webhook admin screens, and the broader connector backlog (Google, GitHub, etc.) are still ahead. This README describes the target design; see [TODO.md](TODO.md) for what's actually done versus still to build.
 
 ## Why this exists
 
@@ -42,7 +42,7 @@ This server will be the single point of failure for authentication across *every
 NekoOAuth2Server/
   apps/
     server/     # OIDC/OAuth 2.1 core — Node.js + TypeScript + Express, PostgreSQL via Prisma
-    console/    # Admin dashboard for managing clients/users/roles (planned, Phase 8)
+    console/    # Admin dashboard — Next.js, real client management so far (see apps/console/README.md)
   packages/
     shared/     # Shared TypeScript types + validation schemas (Tenant, Client, User, Role, Token claims) — planned
     sdk/        # @nekosunevr/oauth2-sdk — real: client library other Neko* sites import to log in against this server (see packages/sdk/README.md)
@@ -50,7 +50,7 @@ NekoOAuth2Server/
 
 ## Getting started
 
-The OIDC/OAuth 2.1 core is real: authorization code flow, refresh token rotation with reuse detection, client credentials, PKCE required for every client type, and a minimal (unstyled — see Phase 8) login/consent UI. There's no admin console, upstream connectors, or email yet — see [TODO.md](TODO.md) for what's real versus planned.
+See [TODO.md](TODO.md) for the full, honest breakdown of what's real versus still planned per phase.
 
 ```bash
 docker compose -f docker-compose.dev.yml up -d   # local Postgres + adminer
@@ -58,9 +58,13 @@ cp .env.example apps/server/.env                 # then fill in DATABASE_URL etc
 pnpm install
 pnpm --filter server generate:jwks               # prints a JWKS — put it in .env as JWKS=...
 pnpm --filter server prisma:migrate              # or: pnpm --filter server exec prisma db push
-pnpm --filter server prisma:seed                 # test OAuth clients + a test user
+pnpm --filter server prisma:seed                 # test OAuth clients, a test user, and the console's own client
 pnpm --filter server dev
-pnpm --filter server test                        # PKCE + full authorization-flow suites
+pnpm --filter server test                        # full test suite
+
+# Admin console (optional) — see apps/console/README.md
+cp apps/console/.env.example apps/console/.env.local
+pnpm --filter console dev                        # http://localhost:3001
 ```
 
 ## Roadmap

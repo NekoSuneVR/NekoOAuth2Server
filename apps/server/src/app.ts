@@ -2,6 +2,7 @@ import cookieParser from "cookie-parser";
 import express from "express";
 import { accountRouter } from "./account/router.js";
 import { profileApiRouter } from "./account/profileApi.js";
+import { clientsApiRouter } from "./admin/clientsApi.js";
 import { emailTemplatesRouter } from "./email/templatesApi.js";
 import { smtpConfigRouter } from "./email/smtpConfigApi.js";
 import { interactionsRouter } from "./oidc/interactions.js";
@@ -36,6 +37,10 @@ app.get("/api/internal/admin-ping", requirePermission("admin:access"), (_req, re
 // admin console screen (Phase 8 hasn't started yet, same gap as above).
 app.use("/api/admin/email-templates", express.json(), emailTemplatesRouter);
 app.use("/api/admin/smtp-config", express.json(), smtpConfigRouter);
+
+// Client management (Phase 8) — the first admin API `apps/console` actually
+// calls for real, not just a documented gap.
+app.use("/api/admin/clients", express.json(), clientsApiRouter);
 
 // Both mounted under /oidc: oidc-provider derives its own mount path from the
 // issuer URL's pathname (here, "/oidc") and computes the interaction redirect

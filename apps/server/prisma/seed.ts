@@ -70,6 +70,27 @@ async function main() {
     },
   });
 
+  const consoleClient = await prisma.client.upsert({
+    where: { clientId: "neko-console" },
+    update: {},
+    create: {
+      tenantId: tenant.id,
+      name: "Neko Admin Console",
+      clientId: "neko-console",
+      // Plaintext dev secret, same as test-confidential-client above — a
+      // real deployment would set NEKO_CONSOLE_CLIENT_SECRET to something
+      // generated, not this. The console is a server-rendered Next.js app
+      // (NextAuth's OAuth exchange runs in server-side route handlers), so
+      // holding a real confidential-client secret is the correct choice,
+      // unlike a browser-only SPA.
+      clientSecret: "neko-console-dev-secret",
+      isConfidential: true,
+      redirectUris: ["http://localhost:3001/api/auth/callback/neko"],
+      scope: "openid profile email roles",
+      tokenEndpointAuthMethod: "client_secret_basic",
+    },
+  });
+
   const user = await prisma.user.upsert({
     where: { primaryEmail: "test@example.com" },
     update: {},
@@ -96,6 +117,23 @@ async function main() {
     where: { userId_roleId: { userId: user.id, roleId: adminRole.id } },
     update: {},
     create: { userId: user.id, roleId: adminRole.id },
+  });
+
+  const consoleAdminRole = await prisma.role.upsert({
+    where: { clientId_name: { clientId: consoleClient.id, name: "console-admin" } },
+    update: {},
+    create: {
+      clientId: consoleClient.id,
+      name: "console-admin",
+      description: "Grants access to apps/console's admin screens (Phase 8) — client management for now.",
+      permissions: ["admin:manage_clients"],
+    },
+  });
+
+  await prisma.userRole.upsert({
+    where: { userId_roleId: { userId: user.id, roleId: consoleAdminRole.id } },
+    update: {},
+    create: { userId: user.id, roleId: consoleAdminRole.id },
   });
 
   const templatesPath = path.join(__dirname, "..", "seed-data", "email-templates.json");

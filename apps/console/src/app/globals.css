@@ -1,0 +1,55 @@
+@import "tailwindcss";
+
+/* Same token set as account-recovery-keychain's apps/web/src/app/globals.css
+   (per TODO.md Phase 8's "reuse the dark-surface + green accent approach"
+   instruction) — copied verbatim, not reinvented, so every Neko* admin
+   surface looks like it belongs to the same family. */
+:root {
+  --background: #05070a;
+  --background-elevated: #0b0f14;
+  --foreground: #e7f7ee;
+  --muted: #8aa39a;
+  --border: #1c2b25;
+  --accent: #22c55e;
+  --accent-strong: #16a34a;
+  --accent-soft: #052e18;
+  --danger: #f87171;
+}
+
+@theme inline {
+  --color-background: var(--background);
+  --color-background-elevated: var(--background-elevated);
+  --color-foreground: var(--foreground);
+  --color-muted: var(--muted);
+  --color-border: var(--border);
+  --color-accent: var(--accent);
+  --color-accent-strong: var(--accent-strong);
+  --color-accent-soft: var(--accent-soft);
+  --color-danger: var(--danger);
+  --font-sans: var(--font-geist-sans);
+  --font-mono: var(--font-geist-mono);
+}
+
+html {
+  color-scheme: dark;
+}
+
+body {
+  background:
+    radial-gradient(circle at 15% 0%, rgba(34, 197, 94, 0.12), transparent 45%),
+    radial-gradient(circle at 85% 20%, rgba(34, 197, 94, 0.08), transparent 40%),
+    var(--background);
+  color: var(--foreground);
+}
+
+.glass-card {
+  background: color-mix(in oklab, var(--background-elevated) 92%, transparent);
+  border: 1px solid var(--border);
+  backdrop-filter: blur(12px);
+}
+
+.accent-glow {
+  box-shadow:
+    0 0 0 1px rgba(34, 197, 94, 0.25),
+    0 8px 40px -12px rgba(34, 197, 94, 0.45);
+}

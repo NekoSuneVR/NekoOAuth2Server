@@ -22,7 +22,9 @@ This is deliberately modeled on what [Logto](https://github.com/logto-io/logto) 
 - **Multi-tenancy** — one deployment, many isolated "organizations" if ever needed, without becoming a requirement for the common case (a handful of trusted first-party apps)
 - **RBAC** — roles/permissions scoped per client application, checked via token claims/scopes
 - **SSO / upstream social login** — Discord first (since every existing Neko\* site already uses it), Google/GitHub as later connectors, all normalized behind this server so downstream apps only ever speak OIDC to *this* server, never to Discord directly
-- **One identity, shared profile data** — a central user record that downstream apps can pull from (with consent/scopes), instead of every site keeping its own disconnected copy
+- **One identity, shared profile data** — a central user record that downstream apps can pull from (with consent/scopes), instead of every site keeping its own disconnected copy. A user can link multiple platforms (Discord, VRChat, Twitch, Roblox, etc.) to one account, and deleting that account propagates a signed deletion event to every downstream app so their cached copy of that user's data actually gets removed too
+- **Platforms without OAuth2 still supported** — VRChat has no public OAuth2, so it gets its own bot-verified connector (bio-code or friend-request verification, the same proven pattern already used in `SocialLinkUpOnly`) instead of being left out
+- **Transactional email** — SMTP-based, template-driven (sign-in codes, password reset, MFA, invitations, etc.)
 - **Admin console** — manage clients (per-project OAuth apps), users, roles, and sessions without hand-editing the database
 - **Session & device management, audit log** — every login/token event traceable, sessions individually revocable
 

@@ -39,7 +39,7 @@ Legend: `[ ]` not started · `[~]` in progress · `[x]` done
 - [ ] Set up Prisma + PostgreSQL connection, initial migration (empty/placeholder schema)
 - [ ] Wire the chosen OIDC provider library into `apps/server`, backed by a custom Postgres storage adapter (not the library's default in-memory/redis adapter)
 - [ ] Define initial Prisma schema per Phase 0's data model decision: `Tenant`, `Client` (per-project OAuth app registration), `User`, `Session`, `LinkedIdentity`, `ClientConsent`
-- [ ] Confirm PKCE is enforced for every client type (including confidential clients) at the library-config level, not just public clients — write a test that a code exchange without a valid `code_verifier` is rejected
+- [ ] Confirm PKCE is enforced for every client type (including confidential clients) at the library-config level, not just public clients — write a test that a code exchange without a valid `code_verifier` is rejected. **This is a policy about our own server as issuer only** — it doesn't imply every upstream provider we connect *to* in Phase 4 uses PKCE the same way; see that phase's note.
 
 ## Phase 2 — OAuth 2.1 / OIDC Compliance
 
@@ -61,7 +61,7 @@ Legend: `[ ]` not started · `[~]` in progress · `[x]` done
 
 **Architecture**: two generic, config-driven connector types (see Phase 0 decision) implementing one shared interface — `getAuthorizationUri`, `authorizationCallbackHandler`, `getAccessToken`, `getUserInfo` — plus one genuinely custom connector type for platforms with no OAuth2 at all.
 
-- [ ] Build the **generic OAuth 2.0 connector** type: config = authorization URL, token URL, userinfo URL, `client_id`/`client_secret`, scopes, PKCE method
+- [ ] Build the **generic OAuth 2.0 connector** type: config = authorization URL, token URL, userinfo URL, `client_id`/`client_secret`, scopes, PKCE method. **PKCE support varies per upstream provider — don't hardcode it as always-on.** Some providers require it (VPZone: mandatory `S256`), some support it optionally (most modern providers), and some older/simpler OAuth2 implementations don't support the `code_challenge`/`code_verifier` params at all and may error if they're sent. The per-provider config needs a tri-state `pkce: "required" | "optional" | "unsupported"`, not a single global assumption — this is separate from, and doesn't affect, Phase 1's decision that *our own* server always requires PKCE from clients connecting to *us*.
 - [ ] Build the **generic OIDC connector** type on top of the same interface: adds discovery-document support and ID token validation
 - [ ] Document the connector plugin interface so more providers (or bot-verified connectors, see below) can be added later without touching core
 

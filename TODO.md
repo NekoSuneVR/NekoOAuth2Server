@@ -80,44 +80,39 @@ Refactored `e2e.test.ts`'s HTTP-driven authorize/login/consent flow into a share
 
 ## Phase 4 — SSO / Upstream Connectors
 
-**Architecture**: two generic, config-driven connector types (see Phase 0 decision) implementing one shared interface — `getAuthorizationUri`, `authorizationCallbackHandler`, `getAccessToken`, `getUserInfo` — plus one genuinely custom connector type for platforms with no OAuth2 at all.
+**Architecture, built as planned**: two generic, config-driven connector types (see Phase 0 decision) implementing one shared interface — `src/connectors/types.ts`'s `UpstreamConnector` (`getAuthorizationUri`, `exchangeCode`, `getUserInfo`) — plus VRChat's genuinely custom bot-verified module, which does not implement this interface at all (it has no authorization redirect).
 
-- [ ] Build the **generic OAuth 2.0 connector** type: config = authorization URL, token URL, userinfo URL, `client_id`/`client_secret`, scopes, PKCE method. **PKCE support varies per upstream provider — don't hardcode it as always-on.** Some providers require it (VPZone: mandatory `S256`), some support it optionally (most modern providers), and some older/simpler OAuth2 implementations don't support the `code_challenge`/`code_verifier` params at all and may error if they're sent. The per-provider config needs a tri-state `pkce: "required" | "optional" | "unsupported"`, not a single global assumption — this is separate from, and doesn't affect, Phase 1's decision that *our own* server always requires PKCE from clients connecting to *us*.
-- [ ] Build the **generic OIDC connector** type on top of the same interface: adds discovery-document support and ID token validation
-- [ ] Document the connector plugin interface so more providers (or bot-verified connectors, see below) can be added later without touching core
+**Scope decided for this pass** (see conversation): build the generic engine plus the four providers with concrete, confirmed endpoint details (Discord/Roblox/Twitch/VPZone). The 13-provider backlog (Google, GitHub, Microsoft, etc.) is left unstarted — each needs its own real endpoint verification against current provider docs, not something to bulk-guess through.
+
+- [x] **Generic OAuth 2.0 connector** (`src/connectors/oauth2Connector.ts`) — config-driven (authorization/token/userinfo URLs, client id/secret, scope), tri-state `pkce: "required" | "optional" | "unsupported"` exactly as planned (not a single global assumption), pluggable `userInfoHeaders` (needed for Twitch's `Client-Id` requirement) and `tokenAuthMethod` (`client_secret_post` vs `client_secret_basic`). **Verified with 6 tests** against a real local mock HTTP server (not just unit-testing in isolation) — correct authorization URL construction with/without PKCE, correct S256 challenge derivation, correct token-exchange request body/auth header for both client-auth methods, correct userinfo parsing.
+- [x] **Generic OIDC connector** (`src/connectors/oidcConnector.ts`) — fetches the provider's real discovery document instead of hardcoding endpoints, validates the id_token's signature/issuer/audience via `jose` against the provider's real JWKS before trusting anything in it. **Verified against our own real, live oidc-provider** (self-referential — genuinely more thorough than a mock, since it's a real spec-compliant OIDC server already proven in Phases 1-3): a real discovery fetch, a real code exchange, a real signed id_token that verifies, and a forged-token-signed-by-an-unrelated-key rejection (proving the signature check is real, not a no-op).
+  - **Real bug this test caught**: the connector originally validated the id_token's `iss` against the URL passed in to *locate* the discovery document. Per spec, the correct check is against the discovery document's own `issuer` field, which can legitimately differ (confirmed live: our own server's discovery endpoints are host-derived per-request, but `issuer` itself stays the static configured value). Fixed to read `discovery.issuer`, matching what a compliant OIDC client is actually supposed to check.
+- [x] Connector plugin interface documented in `src/connectors/types.ts` directly (JSDoc), not a separate doc file — the interface is small enough that the code comment is the documentation.
 
 ### Standard connectors (config profiles of the generic OAuth 2.0/OIDC connector)
 
-Confirmed via auditing our own `SocialLinkUpOnly` project's real implementations — these three already work as real OAuth2 there, so this is porting proven flows, not guessing:
+- [x] **Discord** (`src/connectors/providers/discord.ts`) — endpoints match `SocialLinkUpOnly`'s working `auth/discord.js`. PKCE marked `optional` (Discord's docs describe support, not a requirement) — not re-confirmed live against Discord's real API this session, only the connector engine itself was live-tested (against the mock server and our own OIDC server).
+- [x] **Roblox** (`src/connectors/providers/roblox.ts`) — `apis.roblox.com/oauth/v1/{authorize,token,userinfo}`, PKCE `required`, matching the confirmed audit of `SocialLinkUpOnly`'s `auth/roblox.js`.
+- [x] **Twitch** (`src/connectors/providers/twitch.ts`) — `id.twitch.tv/oauth2/{authorize,token}` + `api.twitch.tv/helix/users`, with the `Client-Id` header Twitch's Helix API requires beyond the standard Bearer token. PKCE marked `optional`, not re-confirmed live.
+- [x] **VPZone** (`src/connectors/providers/vpzone.ts`) — authorize/token endpoints and mandatory PKCE (S256) exactly as given. **One real gap, disclosed rather than guessed past**: the userinfo endpoint was never specified precisely (the flow only describes calling `/api/v1/*` generically) — `/api/v1/me` is assumed by convention and flagged in a code comment to confirm against VPZone's real docs before this connector is used for anything real.
+- [ ] Broader standard-connector backlog, unstarted, in roughly the order they're likely to matter for Neko\* projects (endpoint details to confirm per-provider against [Logto's OAuth Providers Explorer](https://logto.io/oauth-providers-explorer) and each provider's own docs before starting): Google, GitHub, Microsoft, Facebook, Apple, Steam, Spotify, GitLab, LinkedIn, Slack, Patreon, Amazon, X.
 
-- [ ] **Discord** — highest priority; every existing Neko\* site already depends on it
-- [ ] **Roblox** — real OAuth2 + PKCE (S256) against `apis.roblox.com/oauth/v1/{authorize,token}` and `/userinfo`, confirmed working in `SocialLinkUpOnly`
-- [ ] **Twitch** — real OAuth2 against `id.twitch.tv/oauth2/{authorize,token}` + `api.twitch.tv/helix/users`, confirmed working in `SocialLinkUpOnly`
-- [ ] **VPZone** — real OAuth2 + mandatory PKCE (S256). Confirmed flow: register an app for a `client_id`/`client_secret` → redirect to `https://vpzone.tv/oauth/authorize?response_type=code&client_id=...&redirect_uri=...&scope=...&state=...&code_challenge=...&code_challenge_method=S256` → user approves → redirected back with `?code=...&state=...` → exchange at `POST https://vpzone.tv/api/oauth/token` → call `https://vpzone.tv/api/v1/*` with `Authorization: Bearer vpz_at_...`
+### Wired into the actual login flow, not just built and left unused
 
-Broader standard-connector backlog, in roughly the order they're likely to matter for Neko\* projects (endpoint details to confirm per-provider against [Logto's OAuth Providers Explorer](https://logto.io/oauth-providers-explorer) and each provider's own docs before marking done):
-
-- [ ] Google
-- [ ] GitHub
-- [ ] Microsoft
-- [ ] Facebook
-- [ ] Apple
-- [ ] Steam
-- [ ] Spotify
-- [ ] GitLab
-- [ ] LinkedIn
-- [ ] Slack
-- [ ] Patreon
-- [ ] Amazon
-- [ ] X (Twitter)
+- [x] The interaction login page (`src/oidc/interactions.ts`) now lists a "Sign in with X" link per enabled connector (a provider only appears if its `_CLIENT_ID`/`_CLIENT_SECRET` env vars are actually set — booting without Discord configured just means Discord login isn't offered, not a crash).
+- [x] `GET /oidc/interaction/:uid/upstream/:providerId` (start) and `.../callback` routes: the OAuth `state` parameter carries an HMAC-signed `{ uid, provider, codeVerifier }` payload (`src/connectors/state.ts`) rather than needing a separate table to persist it across the redirect-out/redirect-back round trip.
+- [x] First login via a connector creates a `User` + `LinkedIdentity`; a matching email on an existing account (e.g. previously registered with a password) links to that account instead of creating a duplicate.
+- [x] **Verified end to end with a real local mock provider standing in for a real one** (`src/connectors/upstreamLogin.test.ts`, 2 tests): the full real-HTTP round trip (login page → start → real redirect to the mock provider → callback → token exchange → userinfo → account creation) completes and reaches the client's redirect_uri with a code; a second login via the same upstream identity reuses the same `User` row rather than creating a duplicate.
+- [x] Redirect URIs registered with upstream providers are derived from `config.issuer`'s host, not the incoming request's `Host` header — a request's Host shouldn't be able to influence what we tell a third party to redirect back to.
 
 ### Bot-verified connectors (no usable OAuth2 exists)
 
-- [ ] **VRChat** — VRChat has no public OAuth2 at all, so this cannot be a generic-connector preset. Port the proven design from `SocialLinkUpOnly` (`auth/vrchat.js`) exactly rather than reinventing it:
-  - **Bio mode**: generate a 6-character alphanumeric code, ask the user to paste it into their VRChat bio, poll the user's profile every 30s (5-minute timeout) checking `bio.includes(code)`
-  - **Friend-request mode**: have a bot account send the user a VRChat friend request, poll friend status every 30s (5-minute timeout), then auto-unfriend once verified
-  - Both modes need a bot account with real VRChat credentials + TOTP, driven through the unofficial `vrchat` npm client — **decide**: stand up our own bot microservice, or call the existing `VRCLogger/BACKEND` service internally the same way `SocialLinkUpOnly` does (its `VRC_EXTERNAL_API_BASE_URL`)? Reusing `VRCLogger/BACKEND` avoids running a second VRChat bot login, but couples this server's uptime to that project's.
-  - Store only `platformUserId` + username on success, matching `SocialLinkUpOnly`'s `LinkedAccount` model — no VRChat credentials or tokens of the *user's* ever touch this server, only the bot's own.
+- [x] **VRChat architecture decided**: a standalone bot module embedded in `apps/server` (not a separate service, and not calling `VRCLogger/BACKEND`) — one process, simpler to build/deploy/test now. Revisit if the bot's session lifecycle ever needs to be independent of the main server's.
+- [x] Ported the proven design from `SocialLinkUpOnly`'s `auth/vrchat.js` exactly (`src/connectors/vrchat/verification.ts`): bio mode (6-character alphanumeric code, matching format) polls the profile every 30s with a 5-minute timeout checking `bio.includes(code)`; friend-request mode sends a request, polls friend status on the same cadence, then unfriends on success or cancels the stale outgoing request on timeout — never leaves one pending forever.
+- [x] Real bot client (`src/connectors/vrchat/realClient.ts`) built against the **actual installed `vrchat@2.21.7` API** — verified by reading its real type declarations rather than guessing: the `VRChat` class's `login({ username, password, totpSecret })` handles 2FA internally (no separate `verify2Fa` call needed), and `getUser`/`friend`/`getFriendStatus`/`deleteFriendRequest`/`unfriend` all take `{ path: { userId } }`. Only activates if `VRCHAT_BOT_USERNAME`/`PASSWORD`/`TOTP_SECRET` are all set — same "disabled, not a crash" pattern as the OAuth2 connectors.
+- [x] **Honest limit**: there is no real VRChat bot account available in this environment, so the real client (`realClient.ts`) is *not* live-tested — only its request shape was verified against the package's real types. The verification *logic* underneath (polling, timeout, decision-making, cleanup) is real-tested against a fake client with an injected fake clock (`verification.test.ts`, 7 tests, run instantly rather than waiting real minutes): succeeds as soon as the bio/friend-status condition is met, keeps polling correctly in between, times out and returns false after the real 5-minute/30s cadence, and cleans up (unfriends on success, cancels the stale request on timeout) in both outcomes.
+- [ ] Not yet wired into the login/linking flow (needs Phase 5's account-linking UI to make sense — VRChat isn't something a user "signs in" with the way Discord is, it's something they *link* to an existing account) — the module and its logic exist and are tested, but nothing calls them yet.
+- [ ] Store only `platformUserId` + username on success, matching `SocialLinkUpOnly`'s `LinkedAccount` model — planned for when Phase 5 wires this up; not implemented yet since there's no caller.
 
 ## Phase 5 — Shared Identity, Account Linking & Data Lifecycle
 
@@ -186,7 +181,6 @@ Broader standard-connector backlog, in roughly the order they're likely to matte
 
 - Should this server also issue API keys for pure machine-to-machine Neko\* integrations (e.g. bot-to-bot), or is that out of scope and left to each project?
 - Migration order: which existing Neko\* project should be first to switch over to this server, once Phase 7's SDK exists?
-- VRChat bot connector (Phase 4): reuse `VRCLogger/BACKEND` as the bot service, or stand up an independent one owned by this project?
 - Email (Phase 6): is SMTP-only sufficient long-term, or will a hosted provider (SendGrid/Mailgun) be needed for deliverability at scale? The connector interface should stay pluggable either way.
 - **New, found during Phase 2**: is email+password the real, permanent baseline sign-in method, or purely a placeholder until social connectors (Phase 4) and/or magic-link email (Phase 6) exist? `User.passwordHash` was added to unblock testing the OAuth mechanics for real, not as a considered decision on end-user auth UX.
 - **New, found during Phase 2**: there's no phase covering the end-user sign-in/consent *experience* — Phase 8 is the admin console only. The interaction routes built in Phase 2 (`src/oidc/interactions.ts`) are functional but deliberately unstyled. Worth a dedicated phase (mirroring Logto's separate `experience` package) once there's a real visual design to build to, rather than folding it unplanned into Phase 8's admin work.

@@ -1,6 +1,10 @@
 import bcrypt from "bcryptjs";
 import express, { Router } from "express";
+import { connectorRegistry } from "../connectors/registry.js";
+import { generatePkcePair } from "../connectors/pkce.js";
+import { signUpstreamState, verifyUpstreamState } from "../connectors/state.js";
 import { prisma } from "../db.js";
+import { config } from "../config.js";
 import { oidcProvider } from "./provider.js";
 
 // Deliberately minimal, unstyled HTML — this proves the OIDC interaction
@@ -10,11 +14,25 @@ const body = express.urlencoded({ extended: false });
 
 export const interactionsRouter = Router();
 
+// Redirect URIs registered with upstream providers need to be stable, so
+// this is derived from our own configured issuer (which is meant to be this
+// server's real, constant public identity), not the incoming request's Host
+// header — a proxied/spoofed Host shouldn't be able to influence what we
+// tell a third party to redirect back to.
+function upstreamCallbackUrl(uid: string, providerId: string) {
+  const issuerUrl = new URL(config.issuer);
+  return `${issuerUrl.protocol}//${issuerUrl.host}/oidc/interaction/${uid}/upstream/${providerId}/callback`;
+}
+
 interactionsRouter.get("/interaction/:uid", async (req, res, next) => {
   try {
     const { uid, prompt, params } = await oidcProvider.interactionDetails(req, res);
 
     if (prompt.name === "login") {
+      const upstreamLinks = [...connectorRegistry.keys()]
+        .map((id) => `<a href="/oidc/interaction/${uid}/upstream/${id}">Sign in with ${id}</a>`)
+        .join(" · ");
+
       res.type("html").send(`
         <h1>Sign in</h1>
         <form method="post" action="/oidc/interaction/${uid}/login">
@@ -22,6 +40,7 @@ interactionsRouter.get("/interaction/:uid", async (req, res, next) => {
           <input type="password" name="password" placeholder="Password" required />
           <button type="submit">Sign in</button>
         </form>
+        ${upstreamLinks ? `<p>${upstreamLinks}</p>` : ""}
       `);
       return;
     }
@@ -117,6 +136,92 @@ interactionsRouter.get("/interaction/:uid/abort", async (req, res, next) => {
       { error: "access_denied", error_description: "End-User aborted interaction" },
       { mergeWithLastSubmission: false },
     );
+  } catch (err) {
+    next(err);
+  }
+});
+
+interactionsRouter.get("/interaction/:uid/upstream/:providerId", async (req, res, next) => {
+  try {
+    const { prompt } = await oidcProvider.interactionDetails(req, res);
+    if (prompt.name !== "login") throw new Error("not a login prompt");
+
+    const connector = connectorRegistry.get(req.params.providerId);
+    if (!connector) {
+      res.status(404).json({ error: "unknown_provider" });
+      return;
+    }
+
+    const codeVerifier = connector.pkce === "unsupported" ? undefined : generatePkcePair().verifier;
+    const state = signUpstreamState({ uid: req.params.uid, provider: req.params.providerId, codeVerifier });
+
+    const authorizationUri = connector.getAuthorizationUri({
+      state,
+      redirectUri: upstreamCallbackUrl(req.params.uid, req.params.providerId),
+      codeVerifier,
+    });
+    res.redirect(authorizationUri);
+  } catch (err) {
+    next(err);
+  }
+});
+
+interactionsRouter.get("/interaction/:uid/upstream/:providerId/callback", async (req, res, next) => {
+  try {
+    const connector = connectorRegistry.get(req.params.providerId);
+    if (!connector) {
+      res.status(404).json({ error: "unknown_provider" });
+      return;
+    }
+
+    const { uid, provider, codeVerifier } = verifyUpstreamState(String(req.query.state));
+    if (uid !== req.params.uid || provider !== req.params.providerId) {
+      throw new Error("upstream state does not match this interaction/provider");
+    }
+
+    const tokens = await connector.exchangeCode({
+      code: String(req.query.code),
+      redirectUri: upstreamCallbackUrl(uid, provider),
+      codeVerifier,
+    });
+    const info = await connector.getUserInfo(tokens);
+
+    const existingLink = await prisma.linkedIdentity.findUnique({
+      where: { provider_providerUserId: { provider, providerUserId: info.id } },
+    });
+
+    let userId: string;
+    if (existingLink) {
+      userId = existingLink.userId;
+    } else {
+      // Same email as an existing account (e.g. previously registered with a
+      // password) links to that account instead of creating a duplicate one.
+      const existingUser = info.email
+        ? await prisma.user.findUnique({ where: { primaryEmail: info.email } })
+        : null;
+      const user =
+        existingUser ??
+        (await prisma.user.create({
+          data: {
+            primaryEmail: info.email,
+            emailVerified: Boolean(info.email),
+            displayName: info.username,
+          },
+        }));
+
+      await prisma.linkedIdentity.create({
+        data: {
+          userId: user.id,
+          provider,
+          providerUserId: info.id,
+          providerUsername: info.username,
+          verifiedVia: "oauth",
+        },
+      });
+      userId = user.id;
+    }
+
+    await oidcProvider.interactionFinished(req, res, { login: { accountId: userId } }, { mergeWithLastSubmission: false });
   } catch (err) {
     next(err);
   }

@@ -1,4 +1,4 @@
-import Provider, { errors } from "oidc-provider";
+import Provider, { errors, type KoaContextWithOIDC } from "oidc-provider";
 import { config } from "../config.js";
 import { prisma } from "../db.js";
 import { adapterFactory } from "./adapter.js";
@@ -9,20 +9,50 @@ import { adapterFactory } from "./adapter.js";
 // identifier + scopes) is follow-up work once a real service needs it.
 export const INTERNAL_API_RESOURCE = "https://api.nekosunevr.co.uk/internal";
 
-async function findAccount(_ctx: unknown, sub: string) {
+// Roles/permissions are scoped to a single Client (see schema.prisma's note)
+// so this deliberately looks up ctx.oidc.client — the project the user is
+// *currently* authenticating to — rather than returning every role the user
+// holds anywhere. That's what makes cross-project isolation automatic rather
+// than something each caller has to remember to filter for itself.
+async function rolesAndPermissionsFor(userId: string, clientId: string | undefined) {
+  if (!clientId) return { roles: [] as string[], permissions: [] as string[] };
+
+  const client = await prisma.client.findUnique({ where: { clientId } });
+  if (!client) return { roles: [] as string[], permissions: [] as string[] };
+
+  const userRoles = await prisma.userRole.findMany({
+    where: { userId, role: { clientId: client.id } },
+    include: { role: true },
+  });
+
+  return {
+    roles: userRoles.map((ur) => ur.role.name),
+    permissions: [...new Set(userRoles.flatMap((ur) => ur.role.permissions))],
+  };
+}
+
+async function findAccount(ctx: KoaContextWithOIDC, sub: string) {
   const user = await prisma.user.findUnique({ where: { id: sub } });
   if (!user) return undefined;
 
   return {
     accountId: user.id,
-    async claims() {
-      return {
+    async claims(_use: string, scope: string) {
+      const claims: { sub: string; [key: string]: unknown } = {
         sub: user.id,
         email: user.primaryEmail ?? undefined,
         email_verified: user.emailVerified,
         name: user.displayName ?? undefined,
         picture: user.avatarUrl ?? undefined,
       };
+
+      if (scope.split(" ").includes("roles")) {
+        const { roles, permissions } = await rolesAndPermissionsFor(user.id, ctx.oidc?.client?.clientId);
+        claims.roles = roles;
+        claims.permissions = permissions;
+      }
+
+      return claims;
     },
   };
 }
@@ -51,6 +81,10 @@ export const oidcProvider = new Provider(config.issuer, {
     openid: ["sub"],
     profile: ["name", "picture"],
     email: ["email", "email_verified"],
+    // `roles` becomes a recognized scope automatically (any key here does —
+    // oidc-provider's collectScopes() adds claim-defined scope names to the
+    // recognized set on its own, unlike the plain `scopes` array below).
+    roles: ["roles", "permissions"],
   },
   // Non-claim scope names the server recognizes at all — a separate concern
   // from which of them a given resource server actually grants (that's

@@ -6,30 +6,12 @@ import { beforeAll, describe, expect, it } from "vitest";
 import { app } from "../app.js";
 import { config } from "../config.js";
 import { prisma } from "../db.js";
+import { pkcePair, runAuthorizationRequest } from "../testSupport/httpAuthFlow.js";
 import { INTERNAL_API_RESOURCE } from "./provider.js";
 
 const REDIRECT_URI = "http://localhost:3000/callback";
 const TEST_EMAIL = "e2e-test@example.com";
 const TEST_PASSWORD = "correct-horse-battery-staple";
-
-function pkcePair() {
-  const verifier = crypto.randomBytes(32).toString("base64url");
-  const challenge = crypto.createHash("sha256").update(verifier).digest("base64url");
-  return { verifier, challenge };
-}
-
-// oidc-provider's internal redirects (e.g. the post-interaction "resume" hop)
-// are host-qualified using the *incoming request's* host, not our static
-// issuer config — which is a real, correct koa/oidc-provider behavior, but it
-// means they don't match supertest's own ephemeral per-test host. Only the
-// path+query is ever meaningful for driving the flow against the same agent.
-function toRequestPath(location: string) {
-  if (location.startsWith("http://") || location.startsWith("https://")) {
-    const url = new URL(location);
-    return `${url.pathname}${url.search}`;
-  }
-  return location;
-}
 
 beforeAll(async () => {
   const tenant = await prisma.tenant.upsert({
@@ -83,67 +65,26 @@ beforeAll(async () => {
   });
 });
 
-/**
- * Drives the real HTTP authorize -> login -> consent -> redirect flow
- * (through our own interaction routes, not internal model shortcuts), and
- * returns the issued authorization code + the PKCE verifier that matches it.
- */
-async function runAuthorizationRequest(
-  agent: ReturnType<typeof request.agent>,
-  query: Record<string, string>,
-) {
-  let res = await agent.get("/oidc/auth").query(query);
-  let location = res.headers.location as string | undefined;
-
-  for (let hops = 0; hops < 10 && location && !location.startsWith(REDIRECT_URI); hops += 1) {
-    const path = toRequestPath(location);
-    if (path.includes("/interaction/")) {
-      const page = await agent.get(path);
-      const uid = path.split("/interaction/")[1]?.split("/")[0];
-      if (page.text.includes("Sign in")) {
-        res = await agent
-          .post(`/oidc/interaction/${uid}/login`)
-          .type("form")
-          .send({ email: TEST_EMAIL, password: TEST_PASSWORD });
-      } else {
-        res = await agent.post(`/oidc/interaction/${uid}/confirm`).type("form").send({});
-      }
-    } else {
-      res = await agent.get(path);
-    }
-    location = res.headers.location as string | undefined;
-  }
-
-  if (!location || !location.startsWith(REDIRECT_URI)) {
-    throw new Error(`authorization flow did not reach ${REDIRECT_URI}, stuck at ${location}`);
-  }
-
-  const redirectUrl = new URL(location);
-  const error = redirectUrl.searchParams.get("error");
-  if (error) {
-    throw new Error(`authorization failed: ${error} - ${redirectUrl.searchParams.get("error_description")}`);
-  }
-  return {
-    code: redirectUrl.searchParams.get("code")!,
-    state: redirectUrl.searchParams.get("state"),
-  };
-}
-
 async function authorizeAndExchange(scope: string) {
   const agent = request.agent(app);
   const { verifier, challenge } = pkcePair();
   const state = crypto.randomBytes(8).toString("hex");
 
-  const { code } = await runAuthorizationRequest(agent, {
-    client_id: "e2e-public-client",
-    response_type: "code",
-    redirect_uri: REDIRECT_URI,
-    scope,
-    state,
-    prompt: "consent",
-    code_challenge: challenge,
-    code_challenge_method: "S256",
-  });
+  const { code } = await runAuthorizationRequest(
+    agent,
+    {
+      client_id: "e2e-public-client",
+      response_type: "code",
+      redirect_uri: REDIRECT_URI,
+      scope,
+      state,
+      prompt: "consent",
+      code_challenge: challenge,
+      code_challenge_method: "S256",
+    },
+    { email: TEST_EMAIL, password: TEST_PASSWORD },
+    REDIRECT_URI,
+  );
 
   const tokenRes = await agent
     .post("/oidc/token")

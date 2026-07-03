@@ -45,6 +45,36 @@ model Client {
   updatedAt             DateTime @updatedAt
 
   consents ClientConsent[]
+  roles    Role[]
+}
+
+// A role belongs to exactly one Client, not a Tenant — see TODO.md Phase 3's
+// tenant-isolation decision. "admin in Project A" and "admin in Project B"
+// are deliberately different Role rows, even with the same name, so a role
+// assignment can never leak permissions across projects.
+model Role {
+  id          String   @id @default(cuid())
+  clientId    String
+  client      Client   @relation(fields: [clientId], references: [id])
+  name        String
+  description String?
+  permissions String[]
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  userRoles UserRole[]
+
+  @@unique([clientId, name])
+}
+
+model UserRole {
+  userId     String
+  user       User     @relation(fields: [userId], references: [id])
+  roleId     String
+  role       Role     @relation(fields: [roleId], references: [id])
+  assignedAt DateTime @default(now())
+
+  @@id([userId, roleId])
 }
 
 enum UserStatus {
@@ -73,6 +103,7 @@ model User {
 
   linkedIdentities LinkedIdentity[]
   consents         ClientConsent[]
+  userRoles        UserRole[]
 }
 
 // One row per external platform linked to a User. `verifiedVia` distinguishes

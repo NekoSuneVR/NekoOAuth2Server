@@ -70,10 +70,13 @@ Legend: `[ ]` not started · `[~]` in progress · `[x]` done
 
 ## Phase 3 — Multi-Tenancy & RBAC
 
-- [ ] Tenant isolation model (decide: fully isolated orgs, or a single "Neko" tenant with per-client scoping — revisit Phase 0's open question once real usage patterns are clearer)
-- [ ] Role/permission schema, scoped per client application (and, if useful, per-organization along Logto's "organization template" shape — one shared role/permission set, different assignments per org)
-- [ ] Enforce RBAC checks in issued token claims and on the admin API
-- [ ] Tests: a user with role X in Project A cannot use that role's permissions when authenticating to Project B
+- [x] **Tenant isolation model, decided**: a single shared `Tenant` row (`neko`) for all first-party Neko\* apps, not one per project. Real isolation lives at the **Client** level (each downstream app is its own `Client` row with its own `Role`s), not the tenant level — matches Phase 0's framing that multi-tenancy shouldn't be a requirement for "a handful of trusted first-party apps." The `Tenant` model stays in the schema unused-for-isolation for now, so nothing blocks adding real multi-tenant SaaS behavior later if this server is ever offered to third parties.
+- [x] **Role/permission schema**: `Role` (belongs to exactly one `Client`, has a plain `permissions String[]` rather than a separate `Permission` table — simple enough not to need the extra join) and `UserRole` (many-to-many, `User` ↔ `Role`). **Deliberately per-client, not per-tenant**: with a single shared tenant, tenant-scoped roles wouldn't add any real isolation — two rows named "admin" on different clients are unrelated by design, so a name collision across projects can never leak permissions.
+- [x] **RBAC in issued token claims**: a new `roles` scope (`src/oidc/provider.ts`'s `claims.roles`) that, when granted, adds `roles`/`permissions` arrays to `findAccount`'s claims — resolved fresh from the database, scoped to `ctx.oidc.client.clientId` (the project being authenticated to *right now*), not every role the user holds anywhere. This is what makes cross-project isolation automatic instead of something every caller has to remember to filter for itself.
+- [x] **RBAC enforcement on an API**: there's no real admin API yet (Phase 8 builds it), so this phase built the enforcement *mechanism* — `src/rbac/requirePermission.ts`, an Express middleware — and a small example protected route (`GET /api/internal/admin-ping`) demonstrating the exact pattern Phase 8's real admin API should follow. Deliberately re-checks roles/permissions against the current database on every call rather than trusting a claim embedded in a token, so revoking a role takes effect immediately rather than only once the access token expires.
+- [x] **Tests: cross-project isolation, proven, not assumed** (`src/rbac/crossProjectIsolation.test.ts`, 4 tests, all passing) — one user, one "admin" role with an `admin:access` permission granted **only** on Project A: authenticating to Project A shows the role in `/oidc/me` and passes the protected endpoint; authenticating to the *same account* via Project B shows zero roles and gets a 403 from the identical protected endpoint. Proves the isolation is real, not just that the schema has a `clientId` column.
+
+Refactored `e2e.test.ts`'s HTTP-driven authorize/login/consent flow into a shared `src/testSupport/httpAuthFlow.ts` helper so this phase's RBAC test (and any future one) doesn't reimplement it — confirmed no regression by rerunning Phase 1/2's suites after the extraction.
 
 ## Phase 4 — SSO / Upstream Connectors
 
@@ -181,7 +184,6 @@ Broader standard-connector backlog, in roughly the order they're likely to matte
 
 ## Open Questions
 
-- Single shared tenant for all first-party Neko\* projects, or one tenant per project from day one? Affects Phase 3's isolation model.
 - Should this server also issue API keys for pure machine-to-machine Neko\* integrations (e.g. bot-to-bot), or is that out of scope and left to each project?
 - Migration order: which existing Neko\* project should be first to switch over to this server, once Phase 7's SDK exists?
 - VRChat bot connector (Phase 4): reuse `VRCLogger/BACKEND` as the bot service, or stand up an independent one owned by this project?

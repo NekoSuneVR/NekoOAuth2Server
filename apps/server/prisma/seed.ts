@@ -12,7 +12,7 @@ async function main() {
     create: { name: "Neko", slug: "neko" },
   });
 
-  await prisma.client.upsert({
+  const publicClient = await prisma.client.upsert({
     where: { clientId: "test-public-client" },
     update: {},
     create: {
@@ -22,6 +22,7 @@ async function main() {
       clientSecret: null,
       isConfidential: false,
       redirectUris: ["http://localhost:3000/callback"],
+      scope: "openid profile email offline_access roles",
       tokenEndpointAuthMethod: "none",
     },
   });
@@ -57,7 +58,7 @@ async function main() {
     },
   });
 
-  await prisma.user.upsert({
+  const user = await prisma.user.upsert({
     where: { primaryEmail: "test@example.com" },
     update: {},
     create: {
@@ -66,6 +67,23 @@ async function main() {
       displayName: "Test User",
       passwordHash: await bcrypt.hash(TEST_PASSWORD, 10),
     },
+  });
+
+  const adminRole = await prisma.role.upsert({
+    where: { clientId_name: { clientId: publicClient.id, name: "admin" } },
+    update: {},
+    create: {
+      clientId: publicClient.id,
+      name: "admin",
+      description: "Demo role for manual RBAC testing — grants admin:access on test-public-client only.",
+      permissions: ["admin:access"],
+    },
+  });
+
+  await prisma.userRole.upsert({
+    where: { userId_roleId: { userId: user.id, roleId: adminRole.id } },
+    update: {},
+    create: { userId: user.id, roleId: adminRole.id },
   });
 }
 

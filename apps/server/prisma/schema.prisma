@@ -1,0 +1,122 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+// --- Application data model (see TODO.md Phase 0's "shared identity" decision) ---
+
+model Tenant {
+  id        String   @id @default(cuid())
+  name      String
+  slug      String   @unique
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  clients Client[]
+}
+
+// A downstream Neko* project's registered OAuth2 application.
+// oidc-provider's own "Client" adapter model is backed by this table
+// (see src/oidc/adapter.ts), not by the generic OidcModel table below —
+// this is the source of truth an admin console CRUDs against directly.
+model Client {
+  id       String @id @default(cuid())
+  tenantId String
+  tenant   Tenant @relation(fields: [tenantId], references: [id])
+  name     String
+  clientId String @unique
+  // Stored in plaintext deliberately, not hashed: oidc-provider's built-in
+  // client_secret_basic/client_secret_post verification does a constant-time
+  // comparison against the raw configured secret, so a one-way hash would
+  // break auth outright. Phase 9 (Security Hardening) should revisit this as
+  // reversible envelope encryption at rest, not hashing.
+  clientSecret   String?
+  isConfidential Boolean @default(true)
+  redirectUris          String[]
+  grantTypes            String[] @default(["authorization_code", "refresh_token"])
+  responseTypes         String[] @default(["code"])
+  scope                 String   @default("openid profile email")
+  tokenEndpointAuthMethod String @default("client_secret_basic")
+  createdAt             DateTime @default(now())
+  updatedAt             DateTime @updatedAt
+
+  consents ClientConsent[]
+}
+
+enum UserStatus {
+  ACTIVE
+  SUSPENDED
+  DELETED
+}
+
+model User {
+  id            String     @id @default(cuid())
+  primaryEmail  String?    @unique
+  emailVerified Boolean    @default(false)
+  displayName   String?
+  avatarUrl     String?
+  status        UserStatus @default(ACTIVE)
+  createdAt     DateTime   @default(now())
+  updatedAt     DateTime   @updatedAt
+
+  linkedIdentities LinkedIdentity[]
+  consents         ClientConsent[]
+}
+
+// One row per external platform linked to a User. `verifiedVia` distinguishes
+// standard OAuth2/OIDC connectors from VRChat's bot-verified bio/friend-request
+// flow (see TODO.md Phase 4).
+model LinkedIdentity {
+  id                String   @id @default(cuid())
+  userId            String
+  user              User     @relation(fields: [userId], references: [id])
+  provider          String
+  providerUserId    String
+  providerUsername  String?
+  verifiedVia       String
+  linkedAt          DateTime @default(now())
+
+  @@unique([provider, providerUserId])
+}
+
+// Which scopes a User has granted a given Client — the source of truth for
+// "what can a downstream app read" (TODO.md Phase 0).
+model ClientConsent {
+  id            String    @id @default(cuid())
+  userId        String
+  user          User      @relation(fields: [userId], references: [id])
+  clientId      String
+  client        Client    @relation(fields: [clientId], references: [id])
+  grantedScopes String[]
+  grantedAt     DateTime  @default(now())
+  revokedAt     DateTime?
+
+  @@unique([userId, clientId])
+}
+
+// --- oidc-provider storage adapter ---
+//
+// Generic key/value-style table backing every oidc-provider model EXCEPT
+// "Client" (which reads from the Client table above instead). One row per
+// grant/token/session/etc. instance, namespaced by `type` (the oidc-provider
+// model name, e.g. "AccessToken", "AuthorizationCode", "Session", "Grant").
+// This mirrors the standard community pattern for SQL-backed oidc-provider
+// adapters rather than defining one bespoke table per model type.
+model OidcModel {
+  type      String
+  id        String
+  payload   Json
+  grantId   String?
+  userCode  String?
+  uid       String?
+  expiresAt DateTime?
+
+  @@id([type, id])
+  @@index([type, grantId])
+  @@unique([type, userCode])
+  @@unique([type, uid])
+}

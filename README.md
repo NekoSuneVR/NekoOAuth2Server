@@ -2,7 +2,7 @@
 
 🧑‍🚀 A self-hosted, security-first identity provider for every Neko\* project — one OIDC / OAuth 2.1 server instead of twenty copy-pasted Discord OAuth apps.
 
-> **Status: early planning / scaffold.** Nothing in the "Planned features" list below is implemented yet. This README describes the target design; see [TODO.md](TODO.md) for what's actually done versus still to build.
+> **Status: early development.** The OIDC/OAuth 2.1 core (with mandatory PKCE) is wired up and tested; everything else in the "Planned features" list below — multi-tenancy, RBAC, upstream connectors, the admin console, email — is still ahead. This README describes the target design; see [TODO.md](TODO.md) for what's actually done versus still to build.
 
 ## Why this exists
 
@@ -50,11 +50,16 @@ NekoOAuth2Server/
 
 ## Getting started
 
-Only the bare workspace + a minimal `apps/server` health-check scaffold exist right now — this is not yet a working OAuth server.
+The OIDC/OAuth 2.1 core is wired up (`oidc-provider`, Prisma/PostgreSQL, PKCE required for every client type) but there's no admin console, upstream connectors, or email yet — see [TODO.md](TODO.md) for what's real versus planned.
 
 ```bash
+docker compose -f docker-compose.dev.yml up -d   # local Postgres + adminer
+cp .env.example apps/server/.env                 # then fill in DATABASE_URL etc.
 pnpm install
+pnpm --filter server prisma:migrate              # or: pnpm --filter server exec prisma db push
+pnpm --filter server prisma:seed                 # a couple of test OAuth clients
 pnpm --filter server dev
+pnpm --filter server test                        # PKCE enforcement suite
 ```
 
 ## Roadmap

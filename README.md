@@ -2,7 +2,7 @@
 
 🧑‍🚀 A self-hosted, security-first identity provider for every Neko\* project — one OIDC / OAuth 2.1 server instead of twenty copy-pasted Discord OAuth apps.
 
-> **Status: early development.** The OIDC/OAuth 2.1 core is real and tested — authorization code flow, mandatory PKCE, refresh token rotation, client credentials, per-client RBAC — "Sign in with Discord/Roblox/Twitch/VPZone" works end to end, and a self-service account portal (`/account`) lets a user view/link/unlink identities (including VRChat's bio/friend-request bot verification) and delete their own account, which cascades a signed webhook to every app that knows them. Transactional email is also real: an SMTP sender, a 9-template library seeded from real drafts, and a rate-limited/logged send path, all admin-API-driven (no console UI yet). A client SDK (`packages/sdk`, `@nekosunevr/oauth2-sdk`) now exists too, and has already been used to migrate a real separate Neko\* project off its own direct Discord OAuth setup — see [packages/sdk/README.md](packages/sdk/README.md). The admin console itself and the broader connector backlog (Google, GitHub, etc.) are still ahead. This README describes the target design; see [TODO.md](TODO.md) for what's actually done versus still to build.
+> **Status: early development.** The OIDC/OAuth 2.1 core is real and tested — authorization code flow, mandatory PKCE, refresh token rotation, client credentials, per-client RBAC — "Sign in with Discord/Roblox/Twitch/VPZone" works end to end, and a self-service account portal (`/account`) lets a user view/link/unlink identities (including VRChat's bio/friend-request bot verification) and delete their own account, which cascades a signed webhook to every app that knows them. Transactional email is also real: an SMTP sender, a 9-template library seeded from real drafts, and a rate-limited/logged send path, all admin-API-driven (no console UI yet). Client SDKs exist in three languages now — TypeScript (`packages/sdk`, `@nekosunevr/oauth2-sdk`, already used to migrate a real separate Neko\* project off its own direct Discord OAuth setup), Python (`packages/sdk-python`, `nekosunevr-oauth2-sdk`, with an optional Flask helper), and Go (`packages/sdk-go`) — each with its own real test suite and CI. The admin console itself and the broader connector backlog (Google, GitHub, etc.) are still ahead. This README describes the target design; see [TODO.md](TODO.md) for what's actually done versus still to build.
 
 ## Why this exists
 
@@ -44,8 +44,10 @@ NekoOAuth2Server/
     server/     # OIDC/OAuth 2.1 core — Node.js + TypeScript + Express, PostgreSQL via Prisma
     console/    # Admin dashboard for managing clients/users/roles (planned, Phase 8)
   packages/
-    shared/     # Shared TypeScript types + validation schemas (Tenant, Client, User, Role, Token claims) — planned
-    sdk/        # @nekosunevr/oauth2-sdk — real: client library other Neko* sites import to log in against this server (see packages/sdk/README.md)
+    shared/       # Shared TypeScript types + validation schemas (Tenant, Client, User, Role, Token claims) — planned
+    sdk/          # @nekosunevr/oauth2-sdk (TypeScript/npm) — see packages/sdk/README.md
+    sdk-python/   # nekosunevr-oauth2-sdk (Python/PyPI), with an optional Flask helper — see packages/sdk-python/README.md
+    sdk-go/       # Go module — see packages/sdk-go/README.md
 ```
 
 ## Getting started

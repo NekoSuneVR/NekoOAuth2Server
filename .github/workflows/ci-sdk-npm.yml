@@ -1,0 +1,47 @@
+name: CI - npm SDK
+
+on:
+  push:
+    branches: [main, sdk-publish]
+    paths:
+      - "packages/sdk/**"
+      - ".github/workflows/ci-sdk-npm.yml"
+  pull_request:
+    paths:
+      - "packages/sdk/**"
+      - ".github/workflows/ci-sdk-npm.yml"
+
+jobs:
+  build-and-test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: pnpm/action-setup@v4
+        with:
+          version: 10.28.2
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: pnpm
+
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile
+
+      - name: Typecheck
+        run: pnpm --filter "@nekosunevr/oauth2-sdk" typecheck
+
+      # Same split as publish-sdk.yml: express.integration.test.ts needs a
+      # real Postgres-speaking database and a generated JWKS, which this
+      # workflow doesn't set up -- it's a documented limitation, not a
+      # silent skip. See packages/sdk/README.md.
+      - name: Run self-contained tests
+        run: pnpm --filter "@nekosunevr/oauth2-sdk" exec vitest run src/pkce.test.ts src/webhook.test.ts src/client.test.ts
+
+      - name: Build
+        run: pnpm --filter "@nekosunevr/oauth2-sdk" build
+
+      - name: Verify the published tarball contents (npm pack --dry-run)
+        working-directory: packages/sdk
+        run: npm pack --dry-run

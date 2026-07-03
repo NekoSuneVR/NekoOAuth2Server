@@ -1,0 +1,28 @@
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[project]
+name = "nekosunevr-oauth2-sdk"
+version = "0.1.0"
+description = "Client SDK for logging into NekoOAuth2Server (OIDC/OAuth 2.1) -- PKCE, token exchange, id_token verification, and an optional Flask helper."
+readme = "README.md"
+license = "MIT"
+requires-python = ">=3.9"
+authors = [{ name = "NekoSuneVR" }]
+dependencies = ["requests>=2.31", "PyJWT[crypto]>=2.9"]
+
+[project.optional-dependencies]
+flask = ["Flask>=3.0"]
+dev = ["pytest>=8.0", "Flask>=3.0", "cryptography>=42.0"]
+
+[project.urls]
+Homepage = "https://github.com/NekoSuneVR/NekoOAuth2Server/tree/main/packages/sdk-python#readme"
+Repository = "https://github.com/NekoSuneVR/NekoOAuth2Server"
+Issues = "https://github.com/NekoSuneVR/NekoOAuth2Server/issues"
+
+[tool.hatch.build.targets.wheel]
+packages = ["src/neko_oauth2_sdk"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]

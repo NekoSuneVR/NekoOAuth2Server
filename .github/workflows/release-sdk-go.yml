@@ -1,0 +1,45 @@
+name: Release gate - Go SDK
+
+# Go modules have no upload/publish step the way npm/PyPI do -- a module
+# living in a subdirectory of this repo is "published" simply by the tag
+# existing (see packages/sdk-go/README.md for the exact `go get` syntax);
+# the Go module proxy picks it up directly from GitHub on first request.
+# This workflow's only job is to be a release gate: re-verify the build and
+# full test suite pass at the exact tagged commit before anyone treats that
+# tag as a real release.
+on:
+  push:
+    tags:
+      - "packages/sdk-go/v*.*.*"
+
+jobs:
+  verify:
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: packages/sdk-go
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-go@v5
+        with:
+          go-version-file: packages/sdk-go/go.mod
+
+      - name: Verify gofmt compliance
+        run: |
+          UNFORMATTED="$(gofmt -l .)"
+          if [ -n "$UNFORMATTED" ]; then
+            echo "The following files are not gofmt-formatted:"
+            echo "$UNFORMATTED"
+            exit 1
+          fi
+
+      - run: go vet ./...
+      - run: go build ./...
+      - run: go test ./... -v
+
+      - name: Verify tag matches go.mod module path + version
+        run: |
+          TAG_VERSION="${GITHUB_REF_NAME##*/v}"
+          echo "Releasing packages/sdk-go as v$TAG_VERSION"
+          echo "Consumers install it with: go get github.com/NekoSuneVR/NekoOAuth2Server/packages/sdk-go@v$TAG_VERSION"

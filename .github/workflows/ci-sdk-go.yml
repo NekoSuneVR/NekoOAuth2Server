@@ -1,0 +1,46 @@
+name: CI - Go SDK
+
+on:
+  push:
+    branches: [main, sdk-publish]
+    paths:
+      - "packages/sdk-go/**"
+      - ".github/workflows/ci-sdk-go.yml"
+  pull_request:
+    paths:
+      - "packages/sdk-go/**"
+      - ".github/workflows/ci-sdk-go.yml"
+
+jobs:
+  build-and-test:
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: packages/sdk-go
+    steps:
+      - uses: actions/checkout@v4
+
+      # Reads the exact minimum version from go.mod rather than a hardcoded
+      # matrix -- go.mod currently requires a newer toolchain than most
+      # LTS-style version matrices would include.
+      - uses: actions/setup-go@v5
+        with:
+          go-version-file: packages/sdk-go/go.mod
+
+      - name: Verify gofmt compliance
+        run: |
+          UNFORMATTED="$(gofmt -l .)"
+          if [ -n "$UNFORMATTED" ]; then
+            echo "The following files are not gofmt-formatted:"
+            echo "$UNFORMATTED"
+            exit 1
+          fi
+
+      - name: go vet
+        run: go vet ./...
+
+      - name: go build
+        run: go build ./...
+
+      - name: go test
+        run: go test ./... -v

@@ -1,13 +1,27 @@
+import cookieParser from "cookie-parser";
 import express from "express";
+import { accountRouter } from "./account/router.js";
+import { profileApiRouter } from "./account/profileApi.js";
 import { interactionsRouter } from "./oidc/interactions.js";
 import { oidcProvider } from "./oidc/provider.js";
 import { requirePermission } from "./rbac/requirePermission.js";
 
 export const app = express();
 
+app.use(cookieParser());
+
 app.get("/health", (_req, res) => {
   res.json({ status: "ok" });
 });
+
+// Self-service account portal (Phase 5) — view/link/unlink identities,
+// delete your own account. Uses its own signed cookie session (account/
+// session.ts), separate from oidc-provider's internal interaction session.
+app.use("/account", accountRouter);
+
+// Write-side counterpart to reading profile fields via /oidc/me — a
+// downstream app can update whatever it's been granted scope for.
+app.use("/api/profile", express.json(), profileApiRouter);
 
 // Example protected endpoint demonstrating RBAC enforcement (Phase 3) — the
 // pattern any real admin API (Phase 8) would follow, since that API doesn't

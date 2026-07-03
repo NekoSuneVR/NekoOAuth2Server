@@ -6,11 +6,12 @@ import crypto from "node:crypto";
 // round trip to the upstream provider.
 const STATE_SECRET = process.env.COOKIE_SECRET ?? "dev-insecure-cookie-secret-change-me";
 
-export interface UpstreamState {
-  uid: string;
-  provider: string;
-  codeVerifier?: string;
-}
+// "login" drives the Phase 4 sign-in flow (tied to an in-progress OIDC
+// interaction); "link" drives Phase 5's account-linking flow (tied to an
+// already-authenticated account-portal session instead).
+export type UpstreamState =
+  | { mode: "login"; uid: string; provider: string; codeVerifier?: string }
+  | { mode: "link"; userId: string; provider: string; codeVerifier?: string };
 
 export function signUpstreamState(payload: UpstreamState): string {
   const json = Buffer.from(JSON.stringify(payload)).toString("base64url");

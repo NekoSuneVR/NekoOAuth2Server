@@ -1,5 +1,6 @@
 import bcrypt from "bcryptjs";
 import express, { Router } from "express";
+import { describeScope } from "../account/scopeDescriptions.js";
 import { connectorRegistry } from "../connectors/registry.js";
 import { generatePkcePair } from "../connectors/pkce.js";
 import { signUpstreamState, verifyUpstreamState } from "../connectors/state.js";
@@ -46,10 +47,22 @@ interactionsRouter.get("/interaction/:uid", async (req, res, next) => {
     }
 
     if (prompt.name === "consent") {
-      const details = prompt.details as Record<string, unknown>;
+      const details = prompt.details as {
+        missingOIDCScope?: string[];
+        missingResourceScopes?: Record<string, string[]>;
+      };
+      const requestedScopes = [
+        ...(details.missingOIDCScope ?? []),
+        ...Object.values(details.missingResourceScopes ?? {}).flat(),
+      ];
+      const scopeList = requestedScopes.length
+        ? `<ul>${requestedScopes.map((scope) => `<li>${describeScope(scope)}</li>`).join("")}</ul>`
+        : "<p>No new access requested.</p>";
+
       res.type("html").send(`
         <h1>Authorize ${String(params.client_id)}</h1>
-        <pre>${JSON.stringify(details, null, 2)}</pre>
+        <p>This app is asking to:</p>
+        ${scopeList}
         <form method="post" action="/oidc/interaction/${uid}/confirm">
           <button type="submit">Allow</button>
         </form>
@@ -153,7 +166,12 @@ interactionsRouter.get("/interaction/:uid/upstream/:providerId", async (req, res
     }
 
     const codeVerifier = connector.pkce === "unsupported" ? undefined : generatePkcePair().verifier;
-    const state = signUpstreamState({ uid: req.params.uid, provider: req.params.providerId, codeVerifier });
+    const state = signUpstreamState({
+      mode: "login",
+      uid: req.params.uid,
+      provider: req.params.providerId,
+      codeVerifier,
+    });
 
     const authorizationUri = connector.getAuthorizationUri({
       state,
@@ -174,7 +192,9 @@ interactionsRouter.get("/interaction/:uid/upstream/:providerId/callback", async 
       return;
     }
 
-    const { uid, provider, codeVerifier } = verifyUpstreamState(String(req.query.state));
+    const parsedState = verifyUpstreamState(String(req.query.state));
+    if (parsedState.mode !== "login") throw new Error("expected a login-mode upstream state");
+    const { uid, provider, codeVerifier } = parsedState;
     if (uid !== req.params.uid || provider !== req.params.providerId) {
       throw new Error("upstream state does not match this interaction/provider");
     }

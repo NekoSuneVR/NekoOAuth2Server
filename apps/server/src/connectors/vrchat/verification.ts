@@ -20,8 +20,20 @@ export interface PollOptions {
   now?: () => number;
 }
 
-const DEFAULT_POLL_INTERVAL_MS = 30_000;
-const DEFAULT_TIMEOUT_MS = 5 * 60_000;
+// Overridable via env so integration tests can drive the *real* route code
+// (account/router.ts calls these with no explicit opts) without waiting real
+// minutes — production behavior is unaffected since these vars are unset.
+// Read lazily (at call time, not module-load time): this module can be
+// reached before config.ts's `import "dotenv/config"` has actually run,
+// depending on which entry point imports what first, so a top-level
+// `const ... = process.env.X` would silently lock in "unset" — found by the
+// account-linking test itself timing out with the override seemingly ignored.
+function defaultPollIntervalMs(): number {
+  return Number(process.env.VRCHAT_VERIFY_POLL_INTERVAL_MS) || 30_000;
+}
+function defaultTimeoutMs(): number {
+  return Number(process.env.VRCHAT_VERIFY_TIMEOUT_MS) || 5 * 60_000;
+}
 const defaultSleep = (ms: number) => new Promise<void>((resolve) => setTimeout(resolve, ms));
 
 /**
@@ -36,8 +48,8 @@ export async function verifyByBio(
   code: string,
   opts: PollOptions = {},
 ): Promise<boolean> {
-  const pollIntervalMs = opts.pollIntervalMs ?? DEFAULT_POLL_INTERVAL_MS;
-  const timeoutMs = opts.timeoutMs ?? DEFAULT_TIMEOUT_MS;
+  const pollIntervalMs = opts.pollIntervalMs ?? defaultPollIntervalMs();
+  const timeoutMs = opts.timeoutMs ?? defaultTimeoutMs();
   const sleep = opts.sleep ?? defaultSleep;
   const now = opts.now ?? Date.now;
 
@@ -62,8 +74,8 @@ export async function verifyByFriendRequest(
   vrchatUserId: string,
   opts: PollOptions = {},
 ): Promise<boolean> {
-  const pollIntervalMs = opts.pollIntervalMs ?? DEFAULT_POLL_INTERVAL_MS;
-  const timeoutMs = opts.timeoutMs ?? DEFAULT_TIMEOUT_MS;
+  const pollIntervalMs = opts.pollIntervalMs ?? defaultPollIntervalMs();
+  const timeoutMs = opts.timeoutMs ?? defaultTimeoutMs();
   const sleep = opts.sleep ?? defaultSleep;
   const now = opts.now ?? Date.now;
 

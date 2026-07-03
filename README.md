@@ -2,7 +2,7 @@
 
 🧑‍🚀 A self-hosted, security-first identity provider for every Neko\* project — one OIDC / OAuth 2.1 server instead of twenty copy-pasted Discord OAuth apps.
 
-> **Status: early development.** The OIDC/OAuth 2.1 core is real and tested — authorization code flow, mandatory PKCE, refresh token rotation with reuse detection, client credentials, per-client RBAC — and "Sign in with Discord/Roblox/Twitch/VPZone" now works end to end via a generic OAuth2/OIDC connector engine. A VRChat bot-verified linking module exists but isn't wired into anything yet. The admin console, email, and the broader connector backlog (Google, GitHub, etc.) are still ahead. This README describes the target design; see [TODO.md](TODO.md) for what's actually done versus still to build.
+> **Status: early development.** The OIDC/OAuth 2.1 core is real and tested — authorization code flow, mandatory PKCE, refresh token rotation, client credentials, per-client RBAC — "Sign in with Discord/Roblox/Twitch/VPZone" works end to end, and a self-service account portal (`/account`) lets a user view/link/unlink identities (including VRChat's bio/friend-request bot verification) and delete their own account, which cascades a signed webhook to every app that knows them. The admin console, email, and the broader connector backlog (Google, GitHub, etc.) are still ahead. This README describes the target design; see [TODO.md](TODO.md) for what's actually done versus still to build.
 
 ## Why this exists
 

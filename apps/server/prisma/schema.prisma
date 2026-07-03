@@ -46,6 +46,36 @@ model Client {
 
   consents ClientConsent[]
   roles    Role[]
+  webhookEndpoints WebhookEndpoint[]
+}
+
+// A downstream app registers a URL here to be notified of account lifecycle
+// events for users it has a relationship with (see ClientConsent) — Phase 5's
+// deletion cascade is the first real use, more events can follow later
+// without a schema change (the payload's `event` field just changes).
+model WebhookEndpoint {
+  id        String   @id @default(cuid())
+  clientId  String
+  client    Client   @relation(fields: [clientId], references: [id])
+  url       String
+  // HMAC secret for the X-Neko-Signature header — lets the receiving app
+  // verify a delivery actually came from us. Phase 9 should revisit rotation.
+  secret    String
+  createdAt DateTime @default(now())
+
+  deliveries WebhookDelivery[]
+}
+
+// A log of what we actually sent and what happened — Phase 9's "delivery
+// log"/hardening starts from this, not from scratch.
+model WebhookDelivery {
+  id                String          @id @default(cuid())
+  webhookEndpointId String
+  webhookEndpoint   WebhookEndpoint @relation(fields: [webhookEndpointId], references: [id])
+  event             String
+  statusCode        Int?
+  error             String?
+  deliveredAt       DateTime        @default(now())
 }
 
 // A role belongs to exactly one Client, not a Tenant — see TODO.md Phase 3's

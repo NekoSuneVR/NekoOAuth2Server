@@ -57,6 +57,14 @@ model User {
   id            String     @id @default(cuid())
   primaryEmail  String?    @unique
   emailVerified Boolean    @default(false)
+  // Minimal baseline credential so the OIDC interaction flow (Phase 2) has
+  // *some* real way to authenticate a user before any upstream connector
+  // (Phase 4) or email/SMTP flow (Phase 6) exists. Nullable: a user who only
+  // ever signs in via a social connector or VRChat's bot-verified flow may
+  // never set one. Whether email+password stays the primary end-user login
+  // method long-term, vs. magic links/WebAuthn/social-only, is still an open
+  // question — see TODO.md.
+  passwordHash  String?
   displayName   String?
   avatarUrl     String?
   status        UserStatus @default(ACTIVE)

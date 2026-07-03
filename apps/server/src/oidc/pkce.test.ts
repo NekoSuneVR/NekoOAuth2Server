@@ -12,12 +12,25 @@ function pkcePair() {
   return { verifier, challenge };
 }
 
+let testAccountId: string;
+
 beforeAll(async () => {
   const tenant = await prisma.tenant.upsert({
     where: { slug: "test-tenant" },
     update: {},
     create: { name: "Test Tenant", slug: "test-tenant" },
   });
+
+  // Needed since Phase 2 wired up a real findAccount backed by Prisma —
+  // a fabricated accountId with no matching User row no longer resolves
+  // (it did in Phase 1, when findAccount was still oidc-provider's default
+  // passthrough that accepted any id).
+  const user = await prisma.user.upsert({
+    where: { primaryEmail: "pkce-test@example.com" },
+    update: {},
+    create: { primaryEmail: "pkce-test@example.com", emailVerified: true, displayName: "PKCE Test Account" },
+  });
+  testAccountId = user.id;
 
   await prisma.client.upsert({
     where: { clientId: "pkce-test-public" },
@@ -108,13 +121,13 @@ describe("PKCE is enforced at the token endpoint (code exchange)", () => {
     const client = await oidcProvider.Client.find(clientId);
     if (!client) throw new Error(`test setup: client ${clientId} not found`);
 
-    const grant = new oidcProvider.Grant({ accountId: "test-account-1", clientId });
+    const grant = new oidcProvider.Grant({ accountId: testAccountId, clientId });
     grant.addOIDCScope("openid");
     const grantId = await grant.save();
 
     const code = new oidcProvider.AuthorizationCode({
       client,
-      accountId: "test-account-1",
+      accountId: testAccountId,
       grantId,
       gty: "authorization_code",
       redirectUri: REDIRECT_URI,

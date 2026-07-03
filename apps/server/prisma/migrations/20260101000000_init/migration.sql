@@ -39,6 +39,7 @@ CREATE TABLE "User" (
     "id" TEXT NOT NULL,
     "primaryEmail" TEXT,
     "emailVerified" BOOLEAN NOT NULL DEFAULT false,
+    "passwordHash" TEXT,
     "displayName" TEXT,
     "avatarUrl" TEXT,
     "status" "UserStatus" NOT NULL DEFAULT 'ACTIVE',

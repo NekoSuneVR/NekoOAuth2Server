@@ -1,6 +1,9 @@
 import { PrismaClient } from "@prisma/client";
+import bcrypt from "bcryptjs";
 
 const prisma = new PrismaClient();
+
+const TEST_PASSWORD = "correct-horse-battery-staple";
 
 async function main() {
   const tenant = await prisma.tenant.upsert({
@@ -34,6 +37,34 @@ async function main() {
       isConfidential: true,
       redirectUris: ["http://localhost:3000/callback"],
       tokenEndpointAuthMethod: "client_secret_basic",
+    },
+  });
+
+  await prisma.client.upsert({
+    where: { clientId: "test-service-client" },
+    update: {},
+    create: {
+      tenantId: tenant.id,
+      name: "Test Service Client (client_credentials)",
+      clientId: "test-service-client",
+      clientSecret: "test-service-secret",
+      isConfidential: true,
+      redirectUris: [],
+      grantTypes: ["client_credentials"],
+      responseTypes: [],
+      scope: "internal:read internal:write",
+      tokenEndpointAuthMethod: "client_secret_basic",
+    },
+  });
+
+  await prisma.user.upsert({
+    where: { primaryEmail: "test@example.com" },
+    update: {},
+    create: {
+      primaryEmail: "test@example.com",
+      emailVerified: true,
+      displayName: "Test User",
+      passwordHash: await bcrypt.hash(TEST_PASSWORD, 10),
     },
   });
 }

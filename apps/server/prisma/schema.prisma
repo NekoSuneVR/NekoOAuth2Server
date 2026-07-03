@@ -167,6 +167,55 @@ model ClientConsent {
   @@unique([userId, clientId])
 }
 
+// --- Transactional email (see TODO.md Phase 6) ---
+
+// Singleton row (fixed id "default") — admin-configurable SMTP settings.
+// v1 is SMTP-only; a pluggable EmailSender interface (src/email/types.ts)
+// means a SendGrid/Mailgun/HTTP-based sender can be added later without a
+// schema redesign, just a different implementation behind the same seam.
+model SmtpConfig {
+  id          String   @id
+  host        String
+  port        Int
+  secure      Boolean  @default(false)
+  username    String?
+  // Stored in plaintext deliberately — same at-rest tradeoff already made for
+  // Client.clientSecret above (oidc-provider's own comparison needs the raw
+  // value there; here it's simply not built yet). Phase 9 should revisit both
+  // as reversible envelope encryption, not hashing.
+  password    String?
+  fromAddress String
+  fromName    String?
+  updatedAt   DateTime @updatedAt
+}
+
+// One row per `usageType`, matching Logto's email-connector template model
+// exactly (see TODO.md Phase 0 research notes). Seeded from
+// seed-data/email-templates.json; editable via the admin API in
+// src/email/templatesApi.ts (no console UI yet — see Phase 6/8 notes).
+model EmailTemplate {
+  id          String   @id @default(cuid())
+  usageType   String   @unique
+  subject     String
+  content     String
+  contentType String   @default("text/html")
+  updatedAt   DateTime @updatedAt
+}
+
+// A log of every send attempt (sent or not, and why) — doubles as the data
+// source for the per-address rate limit in src/email/sendEmail.ts and as the
+// starting point for Phase 9's audit log, not a separate thing to build later.
+model EmailLog {
+  id        String   @id @default(cuid())
+  usageType String
+  toAddress String
+  success   Boolean
+  error     String?
+  sentAt    DateTime @default(now())
+
+  @@index([toAddress, sentAt])
+}
+
 // --- oidc-provider storage adapter ---
 //
 // Generic key/value-style table backing every oidc-provider model EXCEPT

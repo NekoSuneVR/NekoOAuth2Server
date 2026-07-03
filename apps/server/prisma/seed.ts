@@ -1,9 +1,21 @@
+import { readFileSync } from "node:fs";
+import path from "node:path";
+import { fileURLToPath } from "node:url";
 import { PrismaClient } from "@prisma/client";
 import bcrypt from "bcryptjs";
 
 const prisma = new PrismaClient();
 
 const TEST_PASSWORD = "correct-horse-battery-staple";
+
+const __dirname = path.dirname(fileURLToPath(import.meta.url));
+
+interface SeedEmailTemplate {
+  usageType: string;
+  subject: string;
+  content: string;
+  contentType: string;
+}
 
 async function main() {
   const tenant = await prisma.tenant.upsert({
@@ -76,7 +88,7 @@ async function main() {
       clientId: publicClient.id,
       name: "admin",
       description: "Demo role for manual RBAC testing — grants admin:access on test-public-client only.",
-      permissions: ["admin:access"],
+      permissions: ["admin:access", "email:manage_templates", "email:manage_smtp"],
     },
   });
 
@@ -85,6 +97,16 @@ async function main() {
     update: {},
     create: { userId: user.id, roleId: adminRole.id },
   });
+
+  const templatesPath = path.join(__dirname, "..", "seed-data", "email-templates.json");
+  const templates = JSON.parse(readFileSync(templatesPath, "utf-8")) as SeedEmailTemplate[];
+  for (const template of templates) {
+    await prisma.emailTemplate.upsert({
+      where: { usageType: template.usageType },
+      update: {},
+      create: template,
+    });
+  }
 }
 
 main()

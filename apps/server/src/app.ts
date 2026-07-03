@@ -2,6 +2,8 @@ import cookieParser from "cookie-parser";
 import express from "express";
 import { accountRouter } from "./account/router.js";
 import { profileApiRouter } from "./account/profileApi.js";
+import { emailTemplatesRouter } from "./email/templatesApi.js";
+import { smtpConfigRouter } from "./email/smtpConfigApi.js";
 import { interactionsRouter } from "./oidc/interactions.js";
 import { oidcProvider } from "./oidc/provider.js";
 import { requirePermission } from "./rbac/requirePermission.js";
@@ -29,6 +31,11 @@ app.use("/api/profile", express.json(), profileApiRouter);
 app.get("/api/internal/admin-ping", requirePermission("admin:access"), (_req, res) => {
   res.json({ ok: true });
 });
+
+// Transactional email admin API (Phase 6) — the backend half of a future
+// admin console screen (Phase 8 hasn't started yet, same gap as above).
+app.use("/api/admin/email-templates", express.json(), emailTemplatesRouter);
+app.use("/api/admin/smtp-config", express.json(), smtpConfigRouter);
 
 // Both mounted under /oidc: oidc-provider derives its own mount path from the
 // issuer URL's pathname (here, "/oidc") and computes the interaction redirect

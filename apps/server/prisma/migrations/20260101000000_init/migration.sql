@@ -1,3 +1,6 @@
+warn The configuration property `package.json#prisma` is deprecated and will be removed in Prisma 7. Please migrate to a Prisma config file (e.g., `prisma.config.ts`).
+For more information, see: https://pris.ly/prisma-config
+
 -- CreateSchema
 CREATE SCHEMA IF NOT EXISTS "public";
 
@@ -120,6 +123,45 @@ CREATE TABLE "ClientConsent" (
 );
 
 -- CreateTable
+CREATE TABLE "SmtpConfig" (
+    "id" TEXT NOT NULL,
+    "host" TEXT NOT NULL,
+    "port" INTEGER NOT NULL,
+    "secure" BOOLEAN NOT NULL DEFAULT false,
+    "username" TEXT,
+    "password" TEXT,
+    "fromAddress" TEXT NOT NULL,
+    "fromName" TEXT,
+    "updatedAt" TIMESTAMP(3) NOT NULL,
+
+    CONSTRAINT "SmtpConfig_pkey" PRIMARY KEY ("id")
+);
+
+-- CreateTable
+CREATE TABLE "EmailTemplate" (
+    "id" TEXT NOT NULL,
+    "usageType" TEXT NOT NULL,
+    "subject" TEXT NOT NULL,
+    "content" TEXT NOT NULL,
+    "contentType" TEXT NOT NULL DEFAULT 'text/html',
+    "updatedAt" TIMESTAMP(3) NOT NULL,
+
+    CONSTRAINT "EmailTemplate_pkey" PRIMARY KEY ("id")
+);
+
+-- CreateTable
+CREATE TABLE "EmailLog" (
+    "id" TEXT NOT NULL,
+    "usageType" TEXT NOT NULL,
+    "toAddress" TEXT NOT NULL,
+    "success" BOOLEAN NOT NULL,
+    "error" TEXT,
+    "sentAt" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
+
+    CONSTRAINT "EmailLog_pkey" PRIMARY KEY ("id")
+);
+
+-- CreateTable
 CREATE TABLE "OidcModel" (
     "type" TEXT NOT NULL,
     "id" TEXT NOT NULL,
@@ -149,6 +191,12 @@ CREATE UNIQUE INDEX "LinkedIdentity_provider_providerUserId_key" ON "LinkedIdent
 
 -- CreateIndex
 CREATE UNIQUE INDEX "ClientConsent_userId_clientId_key" ON "ClientConsent"("userId", "clientId");
+
+-- CreateIndex
+CREATE UNIQUE INDEX "EmailTemplate_usageType_key" ON "EmailTemplate"("usageType");
+
+-- CreateIndex
+CREATE INDEX "EmailLog_toAddress_sentAt_idx" ON "EmailLog"("toAddress", "sentAt");
 
 -- CreateIndex
 CREATE INDEX "OidcModel_type_grantId_idx" ON "OidcModel"("type", "grantId");
@@ -185,4 +233,14 @@ ALTER TABLE "ClientConsent" ADD CONSTRAINT "ClientConsent_userId_fkey" FOREIGN K
 
 -- AddForeignKey
 ALTER TABLE "ClientConsent" ADD CONSTRAINT "ClientConsent_clientId_fkey" FOREIGN KEY ("clientId") REFERENCES "Client"("id") ON DELETE RESTRICT ON UPDATE CASCADE;
+┌─────────────────────────────────────────────────────────┐
+│  Update available 6.19.3 -> 7.8.0                       │
+│                                                         │
+│  This is a major update - please follow the guide at    │
+│  https://pris.ly/d/major-version-upgrade                │
+│                                                         │
+│  Run the following to update                            │
+│    npm i --save-dev prisma@latest                       │
+│    npm i @prisma/client@latest                          │
+└─────────────────────────────────────────────────────────┘
 

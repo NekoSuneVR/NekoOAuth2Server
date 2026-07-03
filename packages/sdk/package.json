@@ -1,8 +1,9 @@
 {
   "name": "@nekosunevr/oauth2-sdk",
-  "private": true,
   "version": "0.1.0",
+  "description": "Client SDK for logging into NekoOAuth2Server (OIDC/OAuth 2.1) — PKCE, token exchange, id_token verification, and an Express middleware helper.",
   "type": "module",
+  "license": "MIT",
   "main": "./dist/index.js",
   "types": "./dist/index.d.ts",
   "exports": {
@@ -16,8 +17,24 @@
     }
   },
   "files": [
-    "dist"
+    "dist",
+    "README.md",
+    "LICENSE",
+    "!dist/**/*.test.js",
+    "!dist/**/*.test.d.ts"
   ],
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/NekoSuneVR/NekoOAuth2Server.git",
+    "directory": "packages/sdk"
+  },
+  "homepage": "https://github.com/NekoSuneVR/NekoOAuth2Server/tree/main/packages/sdk#readme",
+  "bugs": {
+    "url": "https://github.com/NekoSuneVR/NekoOAuth2Server/issues"
+  },
+  "publishConfig": {
+    "access": "public"
+  },
   "scripts": {
     "build": "tsc -p tsconfig.json",
     "typecheck": "tsc --noEmit",

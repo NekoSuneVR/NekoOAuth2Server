@@ -1,0 +1,65 @@
+name: Publish SDK to npm
+
+# Publishing the SDK is separate from the rest of the monorepo (the server
+# app is never published anywhere) — triggered by a dedicated tag prefix so
+# it can't be confused with, or accidentally triggered by, some future
+# server release tag.
+on:
+  push:
+    tags:
+      - "sdk-v*.*.*"
+
+jobs:
+  publish:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      id-token: write
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: pnpm/action-setup@v4
+        with:
+          version: 10.28.2
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          registry-url: https://registry.npmjs.org
+          scope: "@nekosunevr"
+          cache: pnpm
+
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile
+
+      - name: Typecheck SDK
+        run: pnpm --filter "@nekosunevr/oauth2-sdk" typecheck
+
+      # Only the tests that don't need a live database/server — the same
+      # split used for local development (see packages/sdk/README.md and
+      # the server repo's TODO.md Phase 1 note on the pglite scratch-DB
+      # verification pattern). express.integration.test.ts needs a real
+      # Postgres-speaking database and a generated JWKS, which this
+      # lightweight publish workflow doesn't set up; it's verified manually
+      # before tagging a release, not automatically here.
+      - name: Run self-contained SDK tests
+        run: pnpm --filter "@nekosunevr/oauth2-sdk" exec vitest run src/pkce.test.ts src/webhook.test.ts src/client.test.ts
+
+      - name: Build SDK
+        run: pnpm --filter "@nekosunevr/oauth2-sdk" build
+
+      - name: Verify tag matches package.json version
+        working-directory: packages/sdk
+        run: |
+          TAG_VERSION="${GITHUB_REF_NAME#sdk-v}"
+          PKG_VERSION="$(node -p "require('./package.json').version")"
+          if [ "$TAG_VERSION" != "$PKG_VERSION" ]; then
+            echo "Tag sdk-v$TAG_VERSION does not match package.json version $PKG_VERSION"
+            exit 1
+          fi
+
+      - name: Publish to npm
+        working-directory: packages/sdk
+        run: npm publish --access public
+        env:
+          NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}

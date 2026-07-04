@@ -4,6 +4,7 @@ import request from "supertest";
 import { beforeAll, describe, expect, it } from "vitest";
 import { app } from "../app.js";
 import { prisma } from "../db.js";
+import { decryptSecret, isEncryptedSecret } from "../security/encryption.js";
 import { pkcePair, runAuthorizationRequest } from "../testSupport/httpAuthFlow.js";
 
 const REDIRECT_URI = "http://localhost:3000/callback";
@@ -123,7 +124,8 @@ describe("SMTP config admin API", () => {
     expect(getRes.body.password).toBeUndefined();
 
     const raw = await prisma.smtpConfig.findUnique({ where: { id: "default" } });
-    expect(raw?.password).toBe("super-secret-password");
+    expect(isEncryptedSecret(raw!.password!)).toBe(true);
+    expect(decryptSecret(raw!.password!)).toBe("super-secret-password");
   });
 
   it("a follow-up PUT without a password keeps the previously saved one", async () => {
@@ -139,7 +141,7 @@ describe("SMTP config admin API", () => {
     expect(putRes.body.hasPassword).toBe(true);
 
     const raw = await prisma.smtpConfig.findUnique({ where: { id: "default" } });
-    expect(raw?.password).toBe("super-secret-password");
+    expect(decryptSecret(raw!.password!)).toBe("super-secret-password");
   });
 
   it("rejects a body missing required fields", async () => {

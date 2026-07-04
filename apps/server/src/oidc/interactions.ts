@@ -1,6 +1,8 @@
 import bcrypt from "bcryptjs";
 import express, { Router } from "express";
 import { describeScope } from "../account/scopeDescriptions.js";
+import { recordAuditEvent } from "../audit/log.js";
+import { accountLoginRateLimiter } from "../security/rateLimit.js";
 import { connectorRegistry } from "../connectors/registry.js";
 import { generatePkcePair } from "../connectors/pkce.js";
 import { signUpstreamState, verifyUpstreamState } from "../connectors/state.js";
@@ -77,7 +79,7 @@ interactionsRouter.get("/interaction/:uid", async (req, res, next) => {
   }
 });
 
-interactionsRouter.post("/interaction/:uid/login", body, async (req, res, next) => {
+interactionsRouter.post("/interaction/:uid/login", accountLoginRateLimiter, body, async (req, res, next) => {
   try {
     const { prompt } = await oidcProvider.interactionDetails(req, res);
     if (prompt.name !== "login") throw new Error("not a login prompt");
@@ -87,9 +89,16 @@ interactionsRouter.post("/interaction/:uid/login", body, async (req, res, next) 
     const valid = user?.passwordHash && password ? await bcrypt.compare(password, user.passwordHash) : false;
 
     if (!user || !valid) {
+      void recordAuditEvent("login.failure", { metadata: { email, surface: "oidc_interaction" }, ipAddress: req.ip });
       res.status(401).type("html").send("<p>Invalid email or password.</p>");
       return;
     }
+
+    void recordAuditEvent("login.success", {
+      actorUserId: user.id,
+      metadata: { surface: "oidc_interaction" },
+      ipAddress: req.ip,
+    });
 
     await oidcProvider.interactionFinished(
       req,

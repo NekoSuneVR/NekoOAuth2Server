@@ -2,12 +2,25 @@ import type { NextFunction, Request, Response } from "express";
 import { prisma } from "../db.js";
 import { oidcProvider } from "../oidc/provider.js";
 
+// Attached by requirePermission once the caller is confirmed to hold the
+// required permission — every admin API handler can read `req.admin` to
+// record who did it, without re-deriving it from the Authorization header
+// itself. Not a global Request augmentation (that would risk colliding with
+// other type declarations elsewhere) — callers cast, same pattern already
+// used in packages/sdk/src/express.ts.
+export interface AdminIdentity {
+  userId: string;
+  clientId: string;
+}
+
+export type RequestWithAdmin = Request & { admin?: AdminIdentity };
+
 /**
  * Express middleware protecting an API route by permission, the pattern any
- * future real admin API (Phase 8) would follow. Roles/permissions are looked
- * up fresh against the current database on every call rather than trusted
- * from a token claim, so a revoked role takes effect immediately rather than
- * only once the token expires.
+ * real admin API (Phase 8) follows. Roles/permissions are looked up fresh
+ * against the current database on every call rather than trusted from a
+ * token claim, so a revoked role takes effect immediately rather than only
+ * once the token expires.
  */
 export function requirePermission(permission: string) {
   return async (req: Request, res: Response, next: NextFunction) => {
@@ -40,6 +53,7 @@ export function requirePermission(permission: string) {
       return;
     }
 
+    (req as RequestWithAdmin).admin = { userId: accessToken.accountId, clientId: client.id };
     next();
   };
 }

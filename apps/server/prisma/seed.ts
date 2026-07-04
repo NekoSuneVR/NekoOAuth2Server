@@ -3,6 +3,7 @@ import path from "node:path";
 import { fileURLToPath } from "node:url";
 import { PrismaClient } from "@prisma/client";
 import bcrypt from "bcryptjs";
+import { encryptSecret } from "../src/security/encryption.js";
 
 const prisma = new PrismaClient();
 
@@ -46,7 +47,7 @@ async function main() {
       tenantId: tenant.id,
       name: "Test Confidential Client",
       clientId: "test-confidential-client",
-      clientSecret: "test-confidential-secret",
+      clientSecret: encryptSecret("test-confidential-secret"),
       isConfidential: true,
       redirectUris: ["http://localhost:3000/callback"],
       tokenEndpointAuthMethod: "client_secret_basic",
@@ -60,7 +61,7 @@ async function main() {
       tenantId: tenant.id,
       name: "Test Service Client (client_credentials)",
       clientId: "test-service-client",
-      clientSecret: "test-service-secret",
+      clientSecret: encryptSecret("test-service-secret"),
       isConfidential: true,
       redirectUris: [],
       grantTypes: ["client_credentials"],
@@ -83,7 +84,7 @@ async function main() {
       // (NextAuth's OAuth exchange runs in server-side route handlers), so
       // holding a real confidential-client secret is the correct choice,
       // unlike a browser-only SPA.
-      clientSecret: "neko-console-dev-secret",
+      clientSecret: encryptSecret("neko-console-dev-secret"),
       isConfidential: true,
       redirectUris: ["http://localhost:3001/api/auth/callback/neko"],
       scope: "openid profile email roles",
@@ -125,8 +126,16 @@ async function main() {
     create: {
       clientId: consoleClient.id,
       name: "console-admin",
-      description: "Grants access to apps/console's admin screens (Phase 8) — client management for now.",
-      permissions: ["admin:manage_clients"],
+      description: "Grants access to apps/console's admin screens (Phase 8/9).",
+      permissions: [
+        "admin:manage_clients",
+        "admin:manage_users",
+        "admin:manage_webhooks",
+        "admin:manage_connectors",
+        "admin:view_audit_log",
+        "email:manage_templates",
+        "email:manage_smtp",
+      ],
     },
   });
 

@@ -1,7 +1,9 @@
 import crypto from "node:crypto";
 import { Router } from "express";
+import { recordAuditEvent } from "../audit/log.js";
 import { prisma } from "../db.js";
-import { requirePermission } from "../rbac/requirePermission.js";
+import { requirePermission, type RequestWithAdmin } from "../rbac/requirePermission.js";
+import { encryptSecret } from "../security/encryption.js";
 
 /**
  * Real CRUD for registering downstream Neko* projects as OAuth2 Clients —
@@ -121,7 +123,7 @@ clientsApiRouter.post("/", async (req, res) => {
       tenantId: tenant.id,
       name: body.name,
       clientId,
-      clientSecret,
+      clientSecret: clientSecret ? encryptSecret(clientSecret) : null,
       isConfidential,
       redirectUris,
       scope: typeof body.scope === "string" ? body.scope : "openid profile email",
@@ -133,6 +135,14 @@ clientsApiRouter.post("/", async (req, res) => {
         : ["code"],
       tokenEndpointAuthMethod,
     },
+  });
+
+  void recordAuditEvent("admin.client.created", {
+    actorUserId: (req as RequestWithAdmin).admin?.userId,
+    actorClientId: (req as RequestWithAdmin).admin?.clientId,
+    targetType: "Client",
+    targetId: client.id,
+    metadata: { name: client.name, clientId: client.clientId },
   });
 
   // The only time the raw secret is ever returned — the admin must copy it
@@ -174,6 +184,15 @@ clientsApiRouter.patch("/:id", async (req, res) => {
   if (Array.isArray(body.responseTypes)) data.responseTypes = body.responseTypes.filter((r) => typeof r === "string");
 
   const client = await prisma.client.update({ where: { id: req.params.id }, data });
+
+  void recordAuditEvent("admin.client.updated", {
+    actorUserId: (req as RequestWithAdmin).admin?.userId,
+    actorClientId: (req as RequestWithAdmin).admin?.clientId,
+    targetType: "Client",
+    targetId: client.id,
+    metadata: { changedFields: Object.keys(data) },
+  });
+
   res.json(serializeClient(client));
 });
 
@@ -192,6 +211,17 @@ clientsApiRouter.post("/:id/rotate-secret", async (req, res) => {
   }
 
   const clientSecret = generateClientSecret();
-  const client = await prisma.client.update({ where: { id: req.params.id }, data: { clientSecret } });
+  const client = await prisma.client.update({
+    where: { id: req.params.id },
+    data: { clientSecret: encryptSecret(clientSecret) },
+  });
+
+  void recordAuditEvent("admin.client.secret_rotated", {
+    actorUserId: (req as RequestWithAdmin).admin?.userId,
+    actorClientId: (req as RequestWithAdmin).admin?.clientId,
+    targetType: "Client",
+    targetId: client.id,
+  });
+
   res.json({ ...serializeClient(client), clientSecret });
 });

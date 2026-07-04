@@ -1,6 +1,8 @@
 import { Router } from "express";
+import { recordAuditEvent } from "../audit/log.js";
 import { prisma } from "../db.js";
-import { requirePermission } from "../rbac/requirePermission.js";
+import { requirePermission, type RequestWithAdmin } from "../rbac/requirePermission.js";
+import { encryptSecret } from "../security/encryption.js";
 import { SMTP_CONFIG_ID } from "./senderProvider.js";
 
 export const smtpConfigRouter = Router();
@@ -64,7 +66,8 @@ smtpConfigRouter.put("/", async (req, res) => {
     fromName: typeof body.fromName === "string" ? body.fromName : null,
     // Only overwritten when a new password is actually sent — a PUT that
     // just changes the host shouldn't silently wipe a previously set secret.
-    ...(typeof body.password === "string" ? { password: body.password } : {}),
+    // Encrypted at rest (Phase 9) — see src/security/encryption.ts.
+    ...(typeof body.password === "string" ? { password: encryptSecret(body.password) } : {}),
   };
 
   const config = await prisma.smtpConfig.upsert({
@@ -72,5 +75,13 @@ smtpConfigRouter.put("/", async (req, res) => {
     update: data,
     create: { id: SMTP_CONFIG_ID, password: null, ...data },
   });
+
+  void recordAuditEvent("admin.smtp_config.updated", {
+    actorUserId: (req as RequestWithAdmin).admin?.userId,
+    actorClientId: (req as RequestWithAdmin).admin?.clientId,
+    targetType: "SmtpConfig",
+    targetId: SMTP_CONFIG_ID,
+  });
+
   res.json(redact(config));
 });

@@ -4,6 +4,7 @@ import request from "supertest";
 import { beforeAll, describe, expect, it } from "vitest";
 import { app } from "../app.js";
 import { prisma } from "../db.js";
+import { decryptSecret, isEncryptedSecret } from "../security/encryption.js";
 import { pkcePair, runAuthorizationRequest } from "../testSupport/httpAuthFlow.js";
 
 const REDIRECT_URI = "http://localhost:3000/callback";
@@ -200,7 +201,8 @@ describe("Client management admin API", () => {
     expect(rotateRes.body.clientSecret).not.toBe(originalSecret);
 
     const stored = await prisma.client.findUnique({ where: { id: createRes.body.id } });
-    expect(stored?.clientSecret).toBe(rotateRes.body.clientSecret);
+    expect(isEncryptedSecret(stored!.clientSecret!)).toBe(true);
+    expect(decryptSecret(stored!.clientSecret!)).toBe(rotateRes.body.clientSecret);
   });
 
   it("refuses to rotate a secret for a public (no-secret) client", async () => {

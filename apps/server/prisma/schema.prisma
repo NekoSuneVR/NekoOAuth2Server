@@ -59,20 +59,29 @@ model WebhookEndpoint {
   client    Client   @relation(fields: [clientId], references: [id])
   url       String
   // HMAC secret for the X-Neko-Signature header — lets the receiving app
-  // verify a delivery actually came from us. Phase 9 should revisit rotation.
+  // verify a delivery actually came from us. Rotatable via the admin API
+  // (Phase 9) without re-registering the endpoint.
   secret    String
+  enabled   Boolean  @default(true)
   createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
 
   deliveries WebhookDelivery[]
 }
 
 // A log of what we actually sent and what happened — Phase 9's "delivery
-// log"/hardening starts from this, not from scratch.
+// log"/hardening starts from this, not from scratch. `attempt` distinguishes
+// a retried redelivery (Phase 9's retry/backoff) from the original attempt.
+// `payload` is the exact JSON body sent, kept specifically so the admin
+// console's "resend" action can replay the identical signed payload rather
+// than trying to reconstruct one.
 model WebhookDelivery {
   id                String          @id @default(cuid())
   webhookEndpointId String
   webhookEndpoint   WebhookEndpoint @relation(fields: [webhookEndpointId], references: [id])
   event             String
+  payload           Json?
+  attempt           Int             @default(1)
   statusCode        Int?
   error             String?
   deliveredAt       DateTime        @default(now())
@@ -214,6 +223,58 @@ model EmailLog {
   sentAt    DateTime @default(now())
 
   @@index([toAddress, sentAt])
+}
+
+// --- Security hardening & audit logging (see TODO.md Phase 9) ---
+
+// One row per login, token issuance/revocation, and admin action — real
+// coverage, not every single internal oidc-provider state transition (see
+// src/audit/log.ts's doc comment for exactly what's wired up and why).
+// `metadata` is deliberately never allowed to contain a raw secret — the
+// audit log itself must never become a way to leak one.
+model AuditLogEntry {
+  id            String   @id @default(cuid())
+  event         String
+  actorUserId   String?
+  actorClientId String?
+  targetType    String?
+  targetId      String?
+  metadata      Json?
+  ipAddress     String?
+  createdAt     DateTime @default(now())
+
+  @@index([event, createdAt])
+  @@index([actorUserId, createdAt])
+}
+
+// DB-backed upstream connector configuration (Phase 8/9) — replaces Phase 4's
+// env-var-only setup so the admin console can manage connectors without a
+// server restart. `presetId` (e.g. "discord") points at a known named
+// preset's endpoint template in src/connectors/presets.ts; a row with no
+// `presetId` is a fully custom OAuth2/OIDC connector, using its own
+// endpoint/issuer columns instead. Existing env-var-configured deployments
+// are migrated once, automatically, on first boot after this shipped (see
+// src/connectors/registry.ts's `migrateEnvConnectorsIfEmpty`), not silently
+// abandoned.
+model Connector {
+  id                    String   @id @default(cuid())
+  providerId            String   @unique
+  displayName           String
+  presetId              String?
+  type                  String // "oauth2" | "oidc"
+  clientId              String
+  // Encrypted at rest (see src/security/encryption.ts) — decrypted only
+  // in-memory when building the live connector registry.
+  clientSecret          String
+  authorizationEndpoint String?
+  tokenEndpoint         String?
+  userInfoEndpoint      String?
+  issuer                String?
+  scope                 String
+  pkce                  String // "required" | "optional" | "unsupported"
+  enabled               Boolean  @default(true)
+  createdAt             DateTime @default(now())
+  updatedAt             DateTime @updatedAt
 }
 
 // --- oidc-provider storage adapter ---

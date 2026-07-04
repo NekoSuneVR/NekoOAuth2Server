@@ -1,5 +1,6 @@
 import type { AdapterPayload } from "oidc-provider";
 import { prisma } from "../db.js";
+import { decryptSecret, isEncryptedSecret } from "../security/encryption.js";
 
 /**
  * oidc-provider's "Client" model adapter — backed directly by our own Client
@@ -16,13 +17,23 @@ export class ClientAdapter {
     const client = await prisma.client.findUnique({ where: { clientId } });
     if (!client) return undefined;
 
+    // Secrets are encrypted at rest (Phase 9) — decrypted here, in-memory,
+    // right before oidc-provider does its own raw client_secret_basic/post
+    // comparison. Tolerates legacy plaintext rows (isEncryptedSecret false)
+    // so nothing breaks for a value written before encryption shipped.
+    const clientSecret = client.clientSecret
+      ? isEncryptedSecret(client.clientSecret)
+        ? decryptSecret(client.clientSecret)
+        : client.clientSecret
+      : undefined;
+
     // Cast: Prisma stores these as plain string[]/string columns, but
     // oidc-provider's types narrow them to specific literal unions (e.g.
     // ResponseType). The admin console (Phase 8) is the only place these
     // columns get written, so it owns keeping the values valid.
     return {
       client_id: client.clientId,
-      client_secret: client.clientSecret ?? undefined,
+      client_secret: clientSecret,
       redirect_uris: client.redirectUris,
       response_types: client.responseTypes,
       grant_types: client.grantTypes,

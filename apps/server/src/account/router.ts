@@ -1,12 +1,15 @@
 import bcrypt from "bcryptjs";
 import express, { Router } from "express";
+import { recordAuditEvent } from "../audit/log.js";
 import { generatePkcePair } from "../connectors/pkce.js";
+import { accountLoginRateLimiter } from "../security/rateLimit.js";
 import { connectorRegistry } from "../connectors/registry.js";
 import { signUpstreamState, verifyUpstreamState } from "../connectors/state.js";
 import { getVRChatBotClient } from "../connectors/vrchat/clientProvider.js";
 import { generateVerificationCode, verifyByBio, verifyByFriendRequest } from "../connectors/vrchat/verification.js";
 import { config } from "../config.js";
 import { prisma } from "../db.js";
+import { listActiveGrantsForUser, revokeAllOidcStateForUser, revokeGrantForUser } from "../oidc/sessions.js";
 import { deleteUserAccount } from "./deleteAccount.js";
 import { clearAccountSession, getAccountSessionUserId, setAccountSession } from "./session.js";
 
@@ -39,16 +42,22 @@ accountRouter.get("/login", (_req, res) => {
   `);
 });
 
-accountRouter.post("/login", body, async (req, res) => {
+accountRouter.post("/login", accountLoginRateLimiter, body, async (req, res) => {
   const { email, password } = req.body as { email?: string; password?: string };
   const user = email ? await prisma.user.findUnique({ where: { primaryEmail: email } }) : null;
   const valid = user?.passwordHash && password ? await bcrypt.compare(password, user.passwordHash) : false;
 
   if (!user || !valid) {
+    void recordAuditEvent("login.failure", { metadata: { email, surface: "account_portal" }, ipAddress: req.ip });
     res.status(401).type("html").send("<p>Invalid email or password.</p>");
     return;
   }
 
+  void recordAuditEvent("login.success", {
+    actorUserId: user.id,
+    metadata: { surface: "account_portal" },
+    ipAddress: req.ip,
+  });
   setAccountSession(res, user.id);
   res.redirect("/account");
 });
@@ -84,6 +93,17 @@ accountRouter.get("/", async (req, res) => {
 
   const linkLinks = linkableProviders.map((id) => `<a href="/account/link/${id}">Link ${id}</a>`).join(" · ");
 
+  const grants = await listActiveGrantsForUser(userId);
+  const sessionRows = grants
+    .map(
+      (g) => `<li>${g.clientName} (${g.scopes.join(", ") || "no scopes"})
+        <form method="post" action="/account/sessions/${g.grantId}/revoke" style="display:inline">
+          <button type="submit">Sign out</button>
+        </form>
+      </li>`,
+    )
+    .join("");
+
   res.type("html").send(`
     <h1>Your account</h1>
     <p>Email: ${user.primaryEmail ?? "(none)"}</p>
@@ -94,11 +114,35 @@ accountRouter.get("/", async (req, res) => {
     ${linkLinks ? `<p>${linkLinks}</p>` : ""}
     <p><a href="/account/link/vrchat">Link VRChat</a></p>
 
+    <h2>Apps you're signed into</h2>
+    <ul>${sessionRows || "<li>None.</li>"}</ul>
+    <form method="post" action="/account/sessions/revoke-all" onsubmit="return confirm('Sign out of every app and browser session? You will need to log in again everywhere.')">
+      <button type="submit">Log out everywhere</button>
+    </form>
+
     <form method="post" action="/account/delete" onsubmit="return confirm('Delete your account? This cannot be undone.')">
       <button type="submit">Delete my account</button>
     </form>
     <a href="/account/logout">Sign out</a>
   `);
+});
+
+accountRouter.post("/sessions/:grantId/revoke", async (req, res) => {
+  const userId = requireSession(req, res);
+  if (!userId) return;
+
+  await revokeGrantForUser(userId, req.params.grantId);
+  res.redirect("/account");
+});
+
+accountRouter.post("/sessions/revoke-all", async (req, res) => {
+  const userId = requireSession(req, res);
+  if (!userId) return;
+
+  await revokeAllOidcStateForUser(userId);
+  void recordAuditEvent("session.revoked_all", { actorUserId: userId });
+  clearAccountSession(res);
+  res.redirect("/account/login");
 });
 
 accountRouter.get("/link/:providerId", async (req, res, next) => {

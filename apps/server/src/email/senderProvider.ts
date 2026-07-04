@@ -1,4 +1,5 @@
 import { prisma } from "../db.js";
+import { decryptSecret, isEncryptedSecret } from "../security/encryption.js";
 import { createSmtpSender } from "./smtpSender.js";
 import type { EmailSender } from "./types.js";
 
@@ -26,5 +27,11 @@ export async function getEmailSender(): Promise<EmailSender | null> {
   const config = await prisma.smtpConfig.findUnique({ where: { id: SMTP_CONFIG_ID } });
   if (!config) return null;
 
-  return createSmtpSender(config);
+  const password = config.password
+    ? isEncryptedSecret(config.password)
+      ? decryptSecret(config.password)
+      : config.password
+    : config.password;
+
+  return createSmtpSender({ ...config, password });
 }

@@ -43,7 +43,9 @@ CREATE TABLE "WebhookEndpoint" (
     "clientId" TEXT NOT NULL,
     "url" TEXT NOT NULL,
     "secret" TEXT NOT NULL,
+    "enabled" BOOLEAN NOT NULL DEFAULT true,
     "createdAt" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    "updatedAt" TIMESTAMP(3) NOT NULL,
 
     CONSTRAINT "WebhookEndpoint_pkey" PRIMARY KEY ("id")
 );
@@ -53,6 +55,8 @@ CREATE TABLE "WebhookDelivery" (
     "id" TEXT NOT NULL,
     "webhookEndpointId" TEXT NOT NULL,
     "event" TEXT NOT NULL,
+    "payload" JSONB,
+    "attempt" INTEGER NOT NULL DEFAULT 1,
     "statusCode" INTEGER,
     "error" TEXT,
     "deliveredAt" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
@@ -162,6 +166,43 @@ CREATE TABLE "EmailLog" (
 );
 
 -- CreateTable
+CREATE TABLE "AuditLogEntry" (
+    "id" TEXT NOT NULL,
+    "event" TEXT NOT NULL,
+    "actorUserId" TEXT,
+    "actorClientId" TEXT,
+    "targetType" TEXT,
+    "targetId" TEXT,
+    "metadata" JSONB,
+    "ipAddress" TEXT,
+    "createdAt" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
+
+    CONSTRAINT "AuditLogEntry_pkey" PRIMARY KEY ("id")
+);
+
+-- CreateTable
+CREATE TABLE "Connector" (
+    "id" TEXT NOT NULL,
+    "providerId" TEXT NOT NULL,
+    "displayName" TEXT NOT NULL,
+    "presetId" TEXT,
+    "type" TEXT NOT NULL,
+    "clientId" TEXT NOT NULL,
+    "clientSecret" TEXT NOT NULL,
+    "authorizationEndpoint" TEXT,
+    "tokenEndpoint" TEXT,
+    "userInfoEndpoint" TEXT,
+    "issuer" TEXT,
+    "scope" TEXT NOT NULL,
+    "pkce" TEXT NOT NULL,
+    "enabled" BOOLEAN NOT NULL DEFAULT true,
+    "createdAt" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    "updatedAt" TIMESTAMP(3) NOT NULL,
+
+    CONSTRAINT "Connector_pkey" PRIMARY KEY ("id")
+);
+
+-- CreateTable
 CREATE TABLE "OidcModel" (
     "type" TEXT NOT NULL,
     "id" TEXT NOT NULL,
@@ -199,6 +240,15 @@ CREATE UNIQUE INDEX "EmailTemplate_usageType_key" ON "EmailTemplate"("usageType"
 CREATE INDEX "EmailLog_toAddress_sentAt_idx" ON "EmailLog"("toAddress", "sentAt");
 
 -- CreateIndex
+CREATE INDEX "AuditLogEntry_event_createdAt_idx" ON "AuditLogEntry"("event", "createdAt");
+
+-- CreateIndex
+CREATE INDEX "AuditLogEntry_actorUserId_createdAt_idx" ON "AuditLogEntry"("actorUserId", "createdAt");
+
+-- CreateIndex
+CREATE UNIQUE INDEX "Connector_providerId_key" ON "Connector"("providerId");
+
+-- CreateIndex
 CREATE INDEX "OidcModel_type_grantId_idx" ON "OidcModel"("type", "grantId");
 
 -- CreateIndex
@@ -233,14 +283,4 @@ ALTER TABLE "ClientConsent" ADD CONSTRAINT "ClientConsent_userId_fkey" FOREIGN K
 
 -- AddForeignKey
 ALTER TABLE "ClientConsent" ADD CONSTRAINT "ClientConsent_clientId_fkey" FOREIGN KEY ("clientId") REFERENCES "Client"("id") ON DELETE RESTRICT ON UPDATE CASCADE;
-┌─────────────────────────────────────────────────────────┐
-│  Update available 6.19.3 -> 7.8.0                       │
-│                                                         │
-│  This is a major update - please follow the guide at    │
-│  https://pris.ly/d/major-version-upgrade                │
-│                                                         │
-│  Run the following to update                            │
-│    npm i --save-dev prisma@latest                       │
-│    npm i @prisma/client@latest                          │
-└─────────────────────────────────────────────────────────┘
 

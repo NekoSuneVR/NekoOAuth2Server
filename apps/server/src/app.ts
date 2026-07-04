@@ -2,7 +2,13 @@ import cookieParser from "cookie-parser";
 import express from "express";
 import { accountRouter } from "./account/router.js";
 import { profileApiRouter } from "./account/profileApi.js";
+import { auditLogApiRouter } from "./admin/auditLogApi.js";
 import { clientsApiRouter } from "./admin/clientsApi.js";
+import { connectorsApiRouter } from "./admin/connectorsApi.js";
+import { rolesApiRouter } from "./admin/rolesApi.js";
+import { usersApiRouter } from "./admin/usersApi.js";
+import { webhooksApiRouter } from "./admin/webhooksApi.js";
+import { authorizeRateLimiter, tokenRateLimiter } from "./security/rateLimit.js";
 import { emailTemplatesRouter } from "./email/templatesApi.js";
 import { smtpConfigRouter } from "./email/smtpConfigApi.js";
 import { interactionsRouter } from "./oidc/interactions.js";
@@ -41,6 +47,28 @@ app.use("/api/admin/smtp-config", express.json(), smtpConfigRouter);
 // Client management (Phase 8) — the first admin API `apps/console` actually
 // calls for real, not just a documented gap.
 app.use("/api/admin/clients", express.json(), clientsApiRouter);
+
+// Audit log (Phase 9) — read-only, see src/audit/log.ts for what's recorded.
+app.use("/api/admin/audit-log", auditLogApiRouter);
+
+// Webhook management (Phase 8/9) — register/rotate/resend, see src/webhooks/deliver.ts for the hardening.
+app.use("/api/admin/webhooks", express.json(), webhooksApiRouter);
+
+// Connector management (Phase 8/9) — DB-backed config, see src/connectors/registry.ts.
+app.use("/api/admin/connectors", express.json(), connectorsApiRouter);
+
+// User/role/session management (Phase 8/9) — view users, grant/revoke roles,
+// force-revoke sessions, admin-triggered deletion.
+app.use("/api/admin/users", express.json(), usersApiRouter);
+app.use("/api/admin/roles", express.json(), rolesApiRouter);
+
+// Rate limiting (Phase 9) — registered as path-scoped `use()` middleware
+// ahead of oidc-provider's own catch-all callback below, since Express only
+// applies path-scoped middleware to matching requests before falling
+// through, it can't be bolted onto oidc-provider's internal Koa router
+// after the fact.
+app.use("/oidc/auth", authorizeRateLimiter);
+app.use("/oidc/token", tokenRateLimiter);
 
 // Both mounted under /oidc: oidc-provider derives its own mount path from the
 // issuer URL's pathname (here, "/oidc") and computes the interaction redirect

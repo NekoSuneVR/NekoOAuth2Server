@@ -1,4 +1,5 @@
 import Provider, { errors, type KoaContextWithOIDC } from "oidc-provider";
+import { recordAuditEvent } from "../audit/log.js";
 import { config } from "../config.js";
 import { prisma } from "../db.js";
 import { adapterFactory } from "./adapter.js";
@@ -113,4 +114,32 @@ export const oidcProvider = new Provider(config.issuer, {
 
 oidcProvider.on("server_error", (_ctx, err) => {
   console.error("oidc-provider server_error:", err);
+});
+
+// A deliberately small, documented subset of oidc-provider's own model
+// lifecycle events (see TODO.md Phase 9) — not every internal state
+// transition, just "a token was issued" / "a token or grant was revoked."
+oidcProvider.on("access_token.saved", (token) => {
+  void recordAuditEvent("token.issued", {
+    actorUserId: typeof token.accountId === "string" ? token.accountId : undefined,
+    actorClientId: typeof token.clientId === "string" ? token.clientId : undefined,
+    targetType: "AccessToken",
+    targetId: typeof token.jti === "string" ? token.jti : undefined,
+  });
+});
+
+oidcProvider.on("access_token.destroyed", (token) => {
+  void recordAuditEvent("token.revoked", {
+    actorUserId: typeof token.accountId === "string" ? token.accountId : undefined,
+    actorClientId: typeof token.clientId === "string" ? token.clientId : undefined,
+    targetType: "AccessToken",
+    targetId: typeof token.jti === "string" ? token.jti : undefined,
+  });
+});
+
+oidcProvider.on("grant.revoked", (_ctx, grantId) => {
+  void recordAuditEvent("token.revoked", {
+    targetType: "Grant",
+    targetId: typeof grantId === "string" ? grantId : undefined,
+  });
 });
